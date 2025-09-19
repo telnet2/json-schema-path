@@ -3,6 +3,8 @@ package json
 import (
 	"reflect"
 	"testing"
+
+	"jsonpath-sdk/spec"
 )
 
 func TestConvertPathToSegments(t *testing.T) {
@@ -11,42 +13,57 @@ func TestConvertPathToSegments(t *testing.T) {
 	tests := []struct {
 		name     string
 		path     string
-		expected []string
+		expected []spec.PathSegment
 	}{
 		{
 			name:     "simple property path",
 			path:     "$.user.name",
-			expected: []string{"user", "name"},
+			expected: []spec.PathSegment{spec.NewPropertySegment("user"), spec.NewPropertySegment("name")},
 		},
 		{
 			name:     "array index path",
 			path:     "$.users[0].name",
-			expected: []string{"users", "0", "name"},
+			expected: []spec.PathSegment{spec.NewPropertySegment("users"), spec.NewArrayIndexSegment(0), spec.NewPropertySegment("name")},
 		},
 		{
-			name:     "multiple array indices",
-			path:     "$.data.users[0].contacts[1].email",
-			expected: []string{"data", "users", "0", "contacts", "1", "email"},
+			name: "multiple array indices",
+			path: "$.data.users[0].contacts[1].email",
+			expected: []spec.PathSegment{
+				spec.NewPropertySegment("data"),
+				spec.NewPropertySegment("users"),
+				spec.NewArrayIndexSegment(0),
+				spec.NewPropertySegment("contacts"),
+				spec.NewArrayIndexSegment(1),
+				spec.NewPropertySegment("email"),
+			},
 		},
 		{
 			name:     "quoted bracket property",
 			path:     `$.data["property-name"].value`,
-			expected: []string{"data", "property-name", "value"},
+			expected: []spec.PathSegment{spec.NewPropertySegment("data"), spec.NewPropertySegment("property-name"), spec.NewPropertySegment("value")},
 		},
 		{
 			name:     "root only",
 			path:     "$",
-			expected: []string{},
+			expected: []spec.PathSegment{},
 		},
 		{
 			name:     "single property",
 			path:     "$.name",
-			expected: []string{"name"},
+			expected: []spec.PathSegment{spec.NewPropertySegment("name")},
 		},
 		{
-			name:     "complex nested",
-			path:     "$.api.responses[0].data.users[2].profile",
-			expected: []string{"api", "responses", "0", "data", "users", "2", "profile"},
+			name: "complex nested",
+			path: "$.api.responses[0].data.users[2].profile",
+			expected: []spec.PathSegment{
+				spec.NewPropertySegment("api"),
+				spec.NewPropertySegment("responses"),
+				spec.NewArrayIndexSegment(0),
+				spec.NewPropertySegment("data"),
+				spec.NewPropertySegment("users"),
+				spec.NewArrayIndexSegment(2),
+				spec.NewPropertySegment("profile"),
+			},
 		},
 	}
 
@@ -62,7 +79,7 @@ func TestConvertPathToSegments(t *testing.T) {
 
 func TestExtractPaths(t *testing.T) {
 	pe := NewPathExtractor()
-	
+
 	jsonData := `{
 		"user": {
 			"name": "John",
@@ -83,7 +100,7 @@ func TestExtractPaths(t *testing.T) {
 		"$",
 		"$.user",
 		"$.user.name",
-		"$.user.age", 
+		"$.user.age",
 		"$.user.contacts",
 		"$.user.contacts[0]",
 		"$.user.contacts[0].type",
@@ -157,7 +174,7 @@ func TestValidateJSON(t *testing.T) {
 
 func TestExtractValue(t *testing.T) {
 	pe := NewPathExtractor()
-	
+
 	jsonData := `{
 		"user": {
 			"name": "John",

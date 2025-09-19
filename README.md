@@ -103,7 +103,7 @@ func main() {
     // Test matches
     for _, path := range paths {
         segments := processor.ConvertPathToSegments(path)
-        if tree.MatchPath(segments) {
+        if tree.MatchSegments(segments) {
             value, _ := processor.ExtractValue(jsonData, path)
             fmt.Printf("Match: %s = %v\\n", path, value)
         }
@@ -226,7 +226,7 @@ err := tree.AddPattern(expr)
 
 // Match paths
 segments := processor.ConvertPathToSegments("$.node.child.value")
-matches := tree.MatchPath(segments)
+matches := tree.MatchSegments(segments)
 ```
 
 ## 📝 Path Expression Syntax
