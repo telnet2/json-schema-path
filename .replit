@@ -1,0 +1,29 @@
+modules = ["go-1.24"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "jsonpath-cli"
+
+[[workflows.workflow]]
+name = "jsonpath-cli"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "go run ./cmd/jsonpath --help"
+
+[workflows.workflow.metadata]
+outputType = "console"
