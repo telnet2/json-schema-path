@@ -1,11 +1,11 @@
-# JSONPath SDK
+# Schema-Path
 
 [![Go Version](https://img.shields.io/badge/go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/yourusername/jsonpath-sdk)](https://goreportcard.com/report/github.com/yourusername/jsonpath-sdk)
-[![Build Status](https://img.shields.io/github/workflow/status/yourusername/jsonpath-sdk/CI)](https://github.com/yourusername/jsonpath-sdk/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yourusername/schema-path)](https://goreportcard.com/report/github.com/yourusername/schema-path)
+[![Build Status](https://img.shields.io/github/workflow/status/yourusername/schema-path/CI)](https://github.com/yourusername/schema-path/actions)
 
-A high-performance Golang SDK and command-line utility for JSON path expressions with advanced support for recursive structures, group operators, and repetition patterns. Built with [bytedance/sonic](https://github.com/bytedance/sonic) for blazing-fast JSON processing and AST parsing.
+A high-performance Golang SDK and command-line utility for schema-path expressions designed for recursive JSON schema structures. Features advanced group operators, repetition patterns, and blazing-fast JSON processing with [bytedance/sonic](https://github.com/bytedance/sonic) AST parsing.
 
 ## ✨ Key Features
 
@@ -35,21 +35,21 @@ A high-performance Golang SDK and command-line utility for JSON path expressions
 ### Using Go Install
 
 ```bash
-go install github.com/yourusername/jsonpath-sdk/cmd/jsonpath@latest
+go install github.com/yourusername/schema-path/cmd/schemapath@latest
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/jsonpath-sdk.git
-cd jsonpath-sdk
-go build ./cmd/jsonpath
+git clone https://github.com/yourusername/schema-path.git
+cd schema-path
+go build ./cmd/schemapath
 ```
 
 ### As Go Module
 
 ```bash
-go get github.com/yourusername/jsonpath-sdk
+go get github.com/yourusername/schema-path
 ```
 
 ## ⚡ Quick Start
@@ -57,17 +57,17 @@ go get github.com/yourusername/jsonpath-sdk
 ### Command Line
 
 ```bash
-# Parse and validate a path expression
-jsonpath parse "$.user.(name|email)"
+# Parse and validate a schema-path expression
+schemapath parse "$.schema.(properties|definitions){*}.type"
 
-# Test path against JSON data
-jsonpath test "$.users[*].name" '{"users":[{"name":"Alice"},{"name":"Bob"}]}'
+# Test path against JSON schema
+schemapath test "$.users[*].name" '{"users":[{"name":"Alice"},{"name":"Bob"}]}'
 
 # Extract values from JSON file
-jsonpath extract "$.data.items[*].value" data.json
+schemapath extract "$.schema.properties.type" schema.json
 
 # Validate JSON format
-jsonpath validate '{"valid": "json"}'
+schemapath validate '{"schema": {"type": "object"}}'
 ```
 
 ### Go SDK
@@ -78,9 +78,9 @@ package main
 import (
     "fmt"
     "log"
-    "jsonpath-sdk/internal/json"
-    "jsonpath-sdk/internal/parser"
-    "jsonpath-sdk/internal/tree"
+    "jsonpath-sdk/json"
+    "jsonpath-sdk/parser"
+    "jsonpath-sdk/tree"
 )
 
 func main() {
@@ -113,33 +113,33 @@ func main() {
 
 ## 💻 CLI Usage
 
-The `jsonpath` CLI provides four main commands:
+The `schemapath` CLI provides four main commands:
 
 ### Parse Command
 
-Parse and analyze path expressions:
+Parse and analyze schema-path expressions:
 
 ```bash
-jsonpath parse "$.node.(child|meta.child){*}.value"
+schemapath parse "$.schema.(properties|definitions){*}.type"
 # Output: Parsed structure with segments and validation
 
 # JSON output format
-jsonpath parse --json --pretty "$.user.profile.settings"
+schemapath parse --json --pretty "$.schema.properties.name.type"
 ```
 
 ### Test Command  
 
-Test path expressions against JSON data:
+Test schema-path expressions against JSON data:
 
 ```bash
 # Test with inline JSON
-jsonpath test "$.user.name" '{"user": {"name": "John"}}'
+schemapath test "$.user.name" '{"user": {"name": "John"}}'
 
 # Test with JSON file
-jsonpath test "$.users[*].active" @users.json
+schemapath test "$.schema.properties.type" @schema.json
 
 # Verbose output showing all paths
-jsonpath test --verbose "$.data.items[*]" '{"data":{"items":[1,2,3]}}'
+schemapath test --verbose "$.schema.(properties|definitions){*}" '{"schema":{"properties":{"name":{"type":"string"}}}}'
 ```
 
 ### Extract Command
@@ -397,24 +397,22 @@ go test -bench=. ./internal/benchmarks/
 ```
 jsonpath-sdk/
 ├── cmd/
-│   └── jsonpath/           # CLI application
+│   └── schemapath/         # CLI application
 │       └── main.go
-├── internal/
-│   ├── benchmarks/         # Performance benchmarks
-│   ├── cli/                # CLI-specific logic  
-│   ├── integration/        # Integration tests
-│   ├── json/              # JSON processing with sonic/AST
-│   │   ├── processor.go   # Main JSON processor
-│   │   └── ast_helpers.go # AST helper functions
-│   ├── parser/            # Path expression parser
-│   │   ├── lexer.go       # Lexical analysis
-│   │   └── parser.go      # Syntax analysis & AST building
-│   ├── spec/              # Formal specification
-│   │   └── specification.go
-│   └── tree/              # Pattern tree implementation
-│       └── tree.go        # Trie/radix tree matching
-├── pkg/
-│   └── jsonpath/          # Public SDK interfaces (planned)
+├── json/                   # JSON processing with sonic/AST
+│   ├── processor.go       # Main JSON processor
+│   ├── ast_helpers.go     # AST helper functions
+│   └── processor_test.go  # JSON processing tests
+├── parser/                 # Schema-path expression parser
+│   ├── lexer.go           # Lexical analysis
+│   ├── parser.go          # Syntax analysis & AST building
+│   └── parser_test.go     # Parser tests
+├── spec/                   # Formal specification
+│   └── specification.go   # Language specification & AST nodes
+├── tree/                   # Pattern tree implementation
+│   ├── tree.go            # Trie/radix tree matching
+│   └── tree_test.go       # Tree matching tests
+├── schema_test.go          # Comprehensive schema pattern tests
 ├── go.mod                 # Go module definition
 └── go.sum                 # Dependency checksums
 ```
