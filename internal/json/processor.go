@@ -6,6 +6,7 @@ import (
         "strings"
 
         "github.com/bytedance/sonic"
+        "github.com/bytedance/sonic/ast"
 )
 
 // PathExtractor extracts JSON paths from JSON data using sonic
@@ -16,41 +17,45 @@ func NewPathExtractor() *PathExtractor {
         return &PathExtractor{}
 }
 
-// ExtractPaths extracts all possible JSON paths from the given JSON data
+// ExtractPaths extracts all possible JSON paths from the given JSON data using AST
 func (pe *PathExtractor) ExtractPaths(jsonData string) ([]string, error) {
-        var data interface{}
-        if err := sonic.UnmarshalString(jsonData, &data); err != nil {
-                return nil, fmt.Errorf("failed to parse JSON: %w", err)
+        root, err := sonic.Get([]byte(jsonData))
+        if err != nil {
+                return nil, fmt.Errorf("failed to parse JSON to AST: %w", err)
         }
 
         paths := []string{}
-        pe.extractPathsRecursive(data, "$", &paths)
+        pe.extractPathsFromAST(&root, "$", &paths)
         return paths, nil
 }
 
-// ExtractValue extracts a specific value from JSON data at the given path
+// ExtractValue extracts a specific value from JSON data at the given path using AST
 func (pe *PathExtractor) ExtractValue(jsonData string, path string) (interface{}, error) {
-        var data interface{}
-        if err := sonic.UnmarshalString(jsonData, &data); err != nil {
-                return nil, fmt.Errorf("failed to parse JSON: %w", err)
+        root, err := sonic.Get([]byte(jsonData))
+        if err != nil {
+                return nil, fmt.Errorf("failed to parse JSON to AST: %w", err)
         }
 
-        // Convert path to segments and navigate
+        // Convert path to segments and navigate using AST
         segments := pe.ConvertPathToSegments(path)
-        current := data
+        current := &root
         
         for _, segment := range segments {
-                switch v := current.(type) {
-                case map[string]interface{}:
-                        if val, exists := v[segment]; exists {
-                                current = val
-                        } else {
+                switch current.Type() {
+                case ast.V_OBJECT:
+                        child := current.Get(segment)
+                        if !child.Exists() {
                                 return nil, fmt.Errorf("property '%s' not found", segment)
                         }
-                case []interface{}:
+                        current = child
+                case ast.V_ARRAY:
                         // Handle array index
-                        if index, err := strconv.Atoi(segment); err == nil && index >= 0 && index < len(v) {
-                                current = v[index]
+                        if index, err := strconv.Atoi(segment); err == nil {
+                                child := current.Index(index)
+                                if !child.Exists() {
+                                        return nil, fmt.Errorf("array index %d out of bounds", index)
+                                }
+                                current = child
                         } else {
                                 return nil, fmt.Errorf("invalid array index '%s'", segment)
                         }
@@ -59,46 +64,67 @@ func (pe *PathExtractor) ExtractValue(jsonData string, path string) (interface{}
                 }
         }
         
-        return current, nil
+        // Convert AST node to interface{} for return
+        return pe.astNodeToInterface(current)
 }
 
-// ValidateJSON validates if a string is valid JSON using sonic
+// ValidateJSON validates if a string is valid JSON using sonic AST
 func (pe *PathExtractor) ValidateJSON(jsonData string) error {
-        var temp interface{}
-        return sonic.UnmarshalString(jsonData, &temp)
+        _, err := sonic.Get([]byte(jsonData))
+        return err
 }
 
-// extractPathsRecursive recursively extracts paths from JSON data
-func (pe *PathExtractor) extractPathsRecursive(data interface{}, currentPath string, paths *[]string) {
+// extractPathsFromAST recursively extracts paths from AST nodes
+func (pe *PathExtractor) extractPathsFromAST(node *ast.Node, currentPath string, paths *[]string) {
         *paths = append(*paths, currentPath)
 
-        switch v := data.(type) {
-        case map[string]interface{}:
-                for key, value := range v {
-                        newPath := currentPath + "." + key
-                        pe.extractPathsRecursive(value, newPath, paths)
+        switch node.Type() {
+        case ast.V_OBJECT:
+                // Use the Map() method for simpler object traversal
+                if objMap, err := node.Map(); err == nil {
+                        for key := range objMap {
+                                child := node.Get(key)
+                                newPath := currentPath + "." + key
+                                pe.extractPathsFromAST(child, newPath, paths)
+                        }
                 }
-        case []interface{}:
-                for i, value := range v {
-                        newPath := currentPath + "[" + strconv.Itoa(i) + "]"
-                        pe.extractPathsRecursive(value, newPath, paths)
+        case ast.V_ARRAY:
+                // Use direct index access for array traversal
+                if arraySlice, err := node.Array(); err == nil {
+                        for i := range arraySlice {
+                                child := node.Index(i)
+                                newPath := currentPath + "[" + strconv.Itoa(i) + "]"
+                                pe.extractPathsFromAST(child, newPath, paths)
+                        }
                 }
         }
 }
 
-// FormatJSON formats JSON data using sonic for pretty printing
+// FormatJSON formats JSON data using sonic AST for pretty printing
 func (pe *PathExtractor) FormatJSON(jsonData string) (string, error) {
-        var data interface{}
-        if err := sonic.UnmarshalString(jsonData, &data); err != nil {
-                return "", fmt.Errorf("failed to parse JSON: %w", err)
-        }
-
-        formatted, err := sonic.MarshalIndent(data, "", "  ")
+        root, err := sonic.Get([]byte(jsonData))
         if err != nil {
-                return "", fmt.Errorf("failed to format JSON: %w", err)
+                return "", fmt.Errorf("failed to parse JSON to AST: %w", err)
         }
 
-        return string(formatted), nil
+        // Convert AST back to formatted JSON
+        formatted, err := root.MarshalJSON()
+        if err != nil {
+                return "", fmt.Errorf("failed to marshal AST to JSON: %w", err)
+        }
+
+        // Use sonic to format with indentation
+        var data interface{}
+        if err := sonic.UnmarshalString(string(formatted), &data); err != nil {
+                return "", fmt.Errorf("failed to parse formatted JSON: %w", err)
+        }
+
+        indented, err := sonic.MarshalIndent(data, "", "  ")
+        if err != nil {
+                return "", fmt.Errorf("failed to indent JSON: %w", err)
+        }
+
+        return string(indented), nil
 }
 
 // ConvertPathToSegments converts a JSON path string to segments for tree matching
