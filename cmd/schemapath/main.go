@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -349,6 +351,66 @@ var extractCmd = &cobra.Command{
 	},
 }
 
+var schemaCmd = &cobra.Command{
+	Use:   "schema [schema_file]",
+	Short: "Generate all schema paths from a JSON Schema document",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		filename := args[0]
+
+		data, err := ioutil.ReadFile(filename)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading schema file %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+
+		processor := jsonpkg.NewPathExtractor()
+
+		absPath, err := filepath.Abs(filename)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving schema path %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+
+		schemaPath := filepath.ToSlash(absPath)
+		if !strings.HasPrefix(schemaPath, "/") {
+			schemaPath = "/" + schemaPath
+		}
+
+		schemaURL := url.URL{Scheme: "file", Path: schemaPath}
+
+		paths, err := processor.ExtractSchemaPathsWithURL(string(data), schemaURL.String())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating schema paths: %v\n", err)
+			os.Exit(1)
+		}
+
+		if outputJSON {
+			result := map[string]interface{}{
+				"file":        filename,
+				"total_paths": len(paths),
+				"paths":       paths,
+			}
+
+			var output []byte
+			if prettyPrint {
+				output, _ = json.MarshalIndent(result, "", "  ")
+			} else {
+				output, _ = json.Marshal(result)
+			}
+			fmt.Println(string(output))
+			return
+		}
+
+		if !quiet {
+			fmt.Printf("Found %d schema paths:\n", len(paths))
+		}
+		for _, path := range paths {
+			fmt.Println(path)
+		}
+	},
+}
+
 func init() {
 	// Add global flags
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
@@ -364,6 +426,7 @@ func init() {
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(extractCmd)
+	rootCmd.AddCommand(schemaCmd)
 }
 
 func main() {
