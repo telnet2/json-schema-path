@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
 	jsonpkg "jsonpath-sdk/json"
 	"jsonpath-sdk/parser"
 	"jsonpath-sdk/tree"
+
+	"github.com/spf13/cobra"
 )
 
 const version = "1.0.0"
