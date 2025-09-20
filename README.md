@@ -51,9 +51,6 @@ schemapath test "$.users[*].profile.email" '{"users":[{"profile":{"email":"user@
 
 # Extract from files
 schemapath extract "$.products[*].price" data.json
-
-# Validate JSON structure
-schemapath validate @schema.json
 ```
 
 ### Go SDK

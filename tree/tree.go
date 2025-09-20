@@ -5,7 +5,7 @@ import (
 	"path"
 	"regexp"
 
-	"jsonpath-sdk/spec"
+	"github.com/telnet2/json-schema-path/spec"
 )
 
 type node struct {

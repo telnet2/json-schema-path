@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"jsonpath-sdk/spec"
+	"github.com/telnet2/json-schema-path/spec"
 )
 
 // Parser implements a recursive descent parser for schema-path expressions.

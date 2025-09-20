@@ -3,9 +3,9 @@ package tree
 import (
 	"testing"
 
-	jsonpkg "jsonpath-sdk/json"
-	"jsonpath-sdk/parser"
-	"jsonpath-sdk/spec"
+	jsonpkg "github.com/telnet2/json-schema-path/json"
+	"github.com/telnet2/json-schema-path/parser"
+	"github.com/telnet2/json-schema-path/spec"
 )
 
 func TestPatternTreeLiteralMatching(t *testing.T) {

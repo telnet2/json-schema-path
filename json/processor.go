@@ -8,7 +8,7 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/ast"
 
-	"jsonpath-sdk/spec"
+	"github.com/telnet2/json-schema-path/spec"
 )
 
 // PathExtractor extracts JSON paths from JSON data using sonic

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"unicode"
 
-	"jsonpath-sdk/spec"
+	"github.com/telnet2/json-schema-path/spec"
 )
 
 // Lexer tokenizes schema-path expressions.

@@ -1,4 +1,4 @@
-module jsonpath-sdk
+module github.com/telnet2/json-schema-path
 
 go 1.22
 

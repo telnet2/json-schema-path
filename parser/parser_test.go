@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"jsonpath-sdk/spec"
+	"github.com/telnet2/json-schema-path/spec"
 )
 
 func TestParseExpressionBasic(t *testing.T) {

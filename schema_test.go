@@ -4,9 +4,9 @@ import (
 	"sort"
 	"testing"
 
-	jsonpkg "jsonpath-sdk/json"
-	"jsonpath-sdk/parser"
-	"jsonpath-sdk/tree"
+	jsonpkg "github.com/telnet2/json-schema-path/json"
+	"github.com/telnet2/json-schema-path/parser"
+	"github.com/telnet2/json-schema-path/tree"
 )
 
 func collectMatches(t *testing.T, expression string, jsonData string) []string {

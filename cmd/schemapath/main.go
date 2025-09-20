@@ -3,15 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
-	jsonpkg "jsonpath-sdk/json"
-	"jsonpath-sdk/parser"
-	"jsonpath-sdk/tree"
+	jsonpkg "github.com/telnet2/json-schema-path/json"
+	"github.com/telnet2/json-schema-path/parser"
+	"github.com/telnet2/json-schema-path/tree"
 
 	"github.com/spf13/cobra"
 )
@@ -36,8 +35,8 @@ func logInfo(format string, args ...interface{}) {
 var rootCmd = &cobra.Command{
 	Use:     "schemapath",
 	Version: version,
-	Short:   "A schema-path expression parser with recursive structure support",
-	Long: `A command-line utility for parsing and testing schema-path expressions
+	Short:   "A  expression parser with recursive structure support",
+	Long: `A command-line utility for parsing and testing  expressions
 that support recursive JSON schema structures using group operators and repetition patterns.
 
 Features:
@@ -50,13 +49,12 @@ Features:
 Examples:
   schemapath parse "$.node.(child|meta.child){*}.value"
   schemapath test "$.user.name" '{"user": {"name": "John"}}'
-  schemapath validate '{"users": [{"name": "Alice"}, {"name": "Bob"}]}'
   schemapath extract "$.users[*].name" data.json`,
 }
 
 var parseCmd = &cobra.Command{
 	Use:   "parse [expression]",
-	Short: "Parse a schema-path expression and display its structure",
+	Short: "Parse a  expression and display its structure",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		expression := args[0]
@@ -108,7 +106,7 @@ var parseCmd = &cobra.Command{
 
 var testCmd = &cobra.Command{
 	Use:   "test [expression] [json]",
-	Short: "Test if a schema-path expression matches the given JSON data",
+	Short: "Test if a  expression matches the given JSON data",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		expression := args[0]
@@ -121,7 +119,7 @@ var testCmd = &cobra.Command{
 		// Handle file input
 		if strings.HasPrefix(jsonData, "@") {
 			filename := jsonData[1:]
-			data, err := ioutil.ReadFile(filename)
+			data, err := os.ReadFile(filename)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
 				os.Exit(1)
@@ -220,56 +218,17 @@ var testCmd = &cobra.Command{
 	},
 }
 
-var validateCmd = &cobra.Command{
-	Use:   "validate [json]",
-	Short: "Validate JSON data format",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		jsonData := args[0]
-
-		// Handle file input
-		if strings.HasPrefix(jsonData, "@") {
-			filename := jsonData[1:]
-			data, err := ioutil.ReadFile(filename)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
-				os.Exit(1)
-			}
-			jsonData = string(data)
-		}
-
-		processor := jsonpkg.NewPathExtractor()
-		if err := processor.ValidateJSON(jsonData); err != nil {
-			if !quiet {
-				fmt.Fprintf(os.Stderr, "Invalid JSON: %v\n", err)
-			}
-			os.Exit(1)
-		}
-
-		if !quiet {
-			fmt.Println("✓ JSON is valid")
-		}
-
-		if verbose {
-			// Show formatted JSON
-			formatted, err := processor.FormatJSON(jsonData)
-			if err == nil {
-				fmt.Printf("\nFormatted JSON:\n%s\n", formatted)
-			}
-		}
-	},
-}
 
 var extractCmd = &cobra.Command{
 	Use:   "extract [expression] [json_file]",
-	Short: "Extract values from JSON data using schema-path expression",
+	Short: "Extract values from JSON data using  expression",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		expression := args[0]
 		filename := args[1]
 
 		// Read JSON file
-		data, err := ioutil.ReadFile(filename)
+		data, err := os.ReadFile(filename)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
 			os.Exit(1)
@@ -360,7 +319,7 @@ var schemaCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		filename := args[0]
 
-		data, err := ioutil.ReadFile(filename)
+		data, err := os.ReadFile(filename)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading schema file %s: %v\n", filename, err)
 			os.Exit(1)
@@ -429,7 +388,6 @@ func init() {
 	// Add all commands
 	rootCmd.AddCommand(parseCmd)
 	rootCmd.AddCommand(testCmd)
-	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(extractCmd)
 	rootCmd.AddCommand(schemaCmd)
 }

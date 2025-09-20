@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"jsonpath-sdk/spec"
+	"github.com/telnet2/json-schema-path/spec"
 )
 
 func TestConvertPathToSegments(t *testing.T) {
