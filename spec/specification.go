@@ -14,7 +14,7 @@ Expression      ::= Root Path?
 Root            ::= "$"
 Path            ::= Segment*
 Segment         ::= "." SegmentItem | BracketNotation
-SegmentItem     ::= Identifier Repetition? | GroupExpression
+SegmentItem     ::= Identifier BracketSuffix? Repetition? | GroupExpression
 Identifier      ::= [a-zA-Z_][a-zA-Z0-9_]*
 BracketNotation ::= "[" BracketContent "]"
 BracketContent  ::= QuotedString | WildcardContent | RegexContent | Index | Property
@@ -172,6 +172,24 @@ func (g *GroupNode) String() string {
 	return result
 }
 
+// SequenceNode represents a sequence of AST nodes like property[bracket].
+type SequenceNode struct {
+	Sequence []ASTNode
+}
+
+func (s *SequenceNode) String() string {
+	result := ""
+	for i, node := range s.Sequence {
+		part := node.String()
+		if i == 0 && len(part) > 0 && part[0] == '.' {
+			result += part[1:]
+		} else {
+			result += part
+		}
+	}
+	return result
+}
+
 // RepetitionNode wraps a sequence of AST nodes that repeat with {*} semantics.
 type RepetitionNode struct {
 	Sequence []ASTNode
@@ -201,7 +219,7 @@ func (p *PathExpression) String() string {
 	result := p.Root.String()
 	for _, segment := range p.Segments {
 		switch node := segment.(type) {
-		case *GroupNode, *RepetitionNode:
+		case *GroupNode, *RepetitionNode, *SequenceNode:
 			result += "." + node.String()
 		default:
 			result += node.String()

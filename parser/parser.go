@@ -87,6 +87,11 @@ func (p *Parser) parseSegment() (spec.ASTNode, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Check for repetition after bracket notation
+		if p.current.Type == spec.TokenStar {
+			p.advance()
+			return &spec.RepetitionNode{Sequence: []spec.ASTNode{bracket}}, nil
+		}
 		return bracket, nil
 	default:
 		return nil, nil
@@ -96,18 +101,50 @@ func (p *Parser) parseSegment() (spec.ASTNode, error) {
 func (p *Parser) parseSegmentItem() (spec.ASTNode, error) {
 	switch p.current.Type {
 	case spec.TokenIdentifier:
-		node := &spec.PropertyNode{Name: p.current.Value}
-		p.advance()
-		if p.current.Type == spec.TokenStar {
-			p.advance()
-			return &spec.RepetitionNode{Sequence: []spec.ASTNode{node}}, nil
-		}
-		return node, nil
+		return p.parseIdentifierWithSuffix()
 	case spec.TokenLParen:
 		return p.parseGroupExpression()
 	default:
 		return nil, fmt.Errorf("expected property or group at position %d", p.current.Position)
 	}
+}
+
+func (p *Parser) parseIdentifierWithSuffix() (spec.ASTNode, error) {
+	node := &spec.PropertyNode{Name: p.current.Value}
+	p.advance()
+	
+	// Peek ahead to see if we have brackets followed by repetition
+	hasBrackets := false
+	savedPos := p.position
+	savedCurrent := p.current
+	
+	// Try to parse brackets
+	suffix, err := p.parseBracketSuffix()
+	if err != nil {
+		// Restore position if bracket parsing failed
+		p.position = savedPos
+		p.current = savedCurrent
+		return node, nil
+	}
+	
+	hasBrackets = len(suffix) > 0
+	hasRepetition := p.current.Type == spec.TokenStar
+	
+	if hasRepetition {
+		// We have repetition, consume the star and return the full sequence
+		p.advance()
+		sequence := []spec.ASTNode{node}
+		sequence = append(sequence, suffix...)
+		return &spec.RepetitionNode{Sequence: sequence}, nil
+	}
+	
+	// No repetition, restore position so brackets can be parsed as separate segments
+	if hasBrackets {
+		p.position = savedPos
+		p.current = savedCurrent
+	}
+	
+	return node, nil
 }
 
 func (p *Parser) parseGroupExpression() (*spec.GroupNode, error) {

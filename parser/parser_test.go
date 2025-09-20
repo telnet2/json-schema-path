@@ -32,6 +32,13 @@ func TestParseExpressionBracketSelectors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseExpression error: %v", err)
 	}
+	
+	// Debug: Print all segments
+	t.Logf("Segments for bracket selectors:")
+	for i, seg := range expr.Segments {
+		t.Logf("  [%d]: %#v", i, seg)
+	}
+	
 	if len(expr.Segments) != 6 {
 		t.Fatalf("expected 6 segments, got %d", len(expr.Segments))
 	}
@@ -177,23 +184,55 @@ func TestParseExpressionProblematicPattern(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseExpression error for $.children[*]{*}.name: %v", err)
 	}
-	if len(expr.Segments) != 3 {
-		t.Fatalf("expected 3 segments, got %d", len(expr.Segments))
+	if len(expr.Segments) != 2 {
+		t.Fatalf("expected 2 segments, got %d", len(expr.Segments))
 	}
-	// First segment should be children with bracket wildcard
-	first, ok := expr.Segments[0].(*spec.BracketNode)
-	if !ok || first.Kind != spec.BracketArrayWildcard {
-		t.Fatalf("expected first segment to be bracket wildcard, got %#v", expr.Segments[0])
-	}
-	// Second segment should be repetition
-	_, ok = expr.Segments[1].(*spec.RepetitionNode)
+	
+	// First segment should be children with bracket wildcard and repetition
+	first, ok := expr.Segments[0].(*spec.RepetitionNode)
 	if !ok {
-		t.Fatalf("expected second segment to be repetition node, got %#v", expr.Segments[1])
+		t.Fatalf("expected first segment to be repetition node, got %#v", expr.Segments[0])
 	}
-	// Third segment should be name property
-	third, ok := expr.Segments[2].(*spec.PropertyNode)
-	if !ok || third.Name != "name" {
-		t.Fatalf("expected third segment to be property 'name', got %#v", expr.Segments[2])
+	if len(first.Sequence) != 2 {
+		t.Fatalf("expected repetition sequence length 2, got %d", len(first.Sequence))
+	}
+	// Check the property node
+	prop, ok := first.Sequence[0].(*spec.PropertyNode)
+	if !ok || prop.Name != "children" {
+		t.Fatalf("expected first sequence item to be property 'children', got %#v", first.Sequence[0])
+	}
+	// Check the bracket wildcard node
+	bracket, ok := first.Sequence[1].(*spec.BracketNode)
+	if !ok || bracket.Kind != spec.BracketArrayWildcard {
+		t.Fatalf("expected second sequence item to be bracket wildcard, got %#v", first.Sequence[1])
+	}
+	// Second segment should be name property
+	second, ok := expr.Segments[1].(*spec.PropertyNode)
+	if !ok || second.Name != "name" {
+		t.Fatalf("expected second segment to be property 'name', got %#v", expr.Segments[1])
+	}
+}
+
+func TestParseExpressionPropertyWithBracket(t *testing.T) {
+	// Test property with bracket but no repetition
+	expr, err := ParseExpression("$.users[*]")
+	if err != nil {
+		t.Fatalf("ParseExpression error for $.users[*]: %v", err)
+	}
+	if len(expr.Segments) != 2 {
+		t.Fatalf("expected 2 segments, got %d", len(expr.Segments))
+	}
+	
+	// First segment should be property
+	first, ok := expr.Segments[0].(*spec.PropertyNode)
+	if !ok || first.Name != "users" {
+		t.Fatalf("expected first segment to be property 'users', got %#v", expr.Segments[0])
+	}
+	
+	// Second segment should be bracket wildcard
+	second, ok := expr.Segments[1].(*spec.BracketNode)
+	if !ok || second.Kind != spec.BracketArrayWildcard {
+		t.Fatalf("expected second segment to be bracket wildcard, got %#v", expr.Segments[1])
 	}
 }
 
