@@ -171,6 +171,32 @@ func TestLexerTokenization(t *testing.T) {
 	}
 }
 
+func TestParseExpressionProblematicPattern(t *testing.T) {
+	// Test the expression that's causing parsing errors
+	expr, err := ParseExpression("$.children[*]{*}.name")
+	if err != nil {
+		t.Fatalf("ParseExpression error for $.children[*]{*}.name: %v", err)
+	}
+	if len(expr.Segments) != 3 {
+		t.Fatalf("expected 3 segments, got %d", len(expr.Segments))
+	}
+	// First segment should be children with bracket wildcard
+	first, ok := expr.Segments[0].(*spec.BracketNode)
+	if !ok || first.Kind != spec.BracketArrayWildcard {
+		t.Fatalf("expected first segment to be bracket wildcard, got %#v", expr.Segments[0])
+	}
+	// Second segment should be repetition
+	_, ok = expr.Segments[1].(*spec.RepetitionNode)
+	if !ok {
+		t.Fatalf("expected second segment to be repetition node, got %#v", expr.Segments[1])
+	}
+	// Third segment should be name property
+	third, ok := expr.Segments[2].(*spec.PropertyNode)
+	if !ok || third.Name != "name" {
+		t.Fatalf("expected third segment to be property 'name', got %#v", expr.Segments[2])
+	}
+}
+
 func TestParseExpressionInvalidPatterns(t *testing.T) {
 	cases := []string{
 		"$[~]",
