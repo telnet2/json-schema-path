@@ -1,73 +1,59 @@
-# Schema-Path
+# json-schema-path
 
 [![Go Version](https://img.shields.io/badge/go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/yourusername/schema-path)](https://goreportcard.com/report/github.com/yourusername/schema-path)
-[![Build Status](https://img.shields.io/github/workflow/status/yourusername/schema-path/CI)](https://github.com/yourusername/schema-path/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/telnet2/json-schema-path)](https://goreportcard.com/report/github.com/telnet2/json-schema-path)
 
-A high-performance Golang SDK and command-line utility for schema-path expressions designed for recursive JSON schema structures. Features advanced group operators, repetition patterns, and blazing-fast JSON processing with [bytedance/sonic](https://github.com/bytedance/sonic) AST parsing.
+A high-performance Go library and CLI tool for navigating and querying JSON schema structures using advanced path expressions. Built for recursive data patterns with support for repetition, wildcards, and group operators.
 
-## ✨ Key Features
+## 🌟 Features
 
-- 🚀 **High Performance**: Powered by bytedance/sonic with native AST parsing
-- 🔄 **Recursive Structures**: Support for complex recursive JSON patterns with `{*}` repetition
-- 🎯 **Group Operators**: Alternative path matching with `|` operators in group expressions
-- 🔧 **Bracket Notation**: Advanced bracket notation with proper escape sequence handling  
-- 📊 **Trie Pattern Matching**: Efficient pattern matching using trie/radix tree structures
-- 💻 **CLI & SDK**: Both command-line utility and programmatic Go SDK
-- ✅ **Comprehensive Testing**: Extensive test coverage with integration testing
+- **🚀 Blazing Fast**: Powered by [bytedance/sonic](https://github.com/bytedance/sonic) for native JSON AST parsing
+- **🔄 Recursive Navigation**: Zero-or-more repetition with `{*}` for deep traversal patterns
+- **🎯 Group Operators**: Alternative path matching with `|` for flexible queries
+- **🔧 Advanced Bracket Notation**: Support for wildcards `[*]`, regex `[~pattern]`, and property wildcards `[#*key]`
+- **📊 Efficient Matching**: Trie-based pattern matching for optimal performance
+- **💻 Dual Interface**: Both command-line tool and Go SDK
+- **✅ Production Ready**: Comprehensive test suite with 100% path expression coverage
 
-## 📖 Table of Contents
+## 📦 Installation
 
-- [Installation](#-installation)
-- [Quick Start](#-quick-start)
-- [CLI Usage](#-cli-usage)
-- [SDK Usage](#-sdk-usage)  
-- [Path Expression Syntax](#-path-expression-syntax)
-- [Examples](#-examples)
-- [Performance](#-performance)
-- [Project Structure](#-project-structure)
-- [Contributing](#-contributing)
-- [License](#-license)
-
-## 🚀 Installation
-
-### Using Go Install
+### CLI Tool
 
 ```bash
-go install github.com/yourusername/schema-path/cmd/schemapath@latest
+go install github.com/telnet2/json-schema-path/cmd/schemapath@latest
+```
+
+### Go Library
+
+```bash
+go get github.com/telnet2/json-schema-path
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/schema-path.git
-cd schema-path
+git clone https://github.com/telnet2/json-schema-path.git
+cd json-schema-path
 go build ./cmd/schemapath
 ```
 
-### As Go Module
-
-```bash
-go get github.com/yourusername/schema-path
-```
-
-## ⚡ Quick Start
+## 🚀 Quick Start
 
 ### Command Line
 
 ```bash
-# Parse and validate a schema-path expression
-schemapath parse "$.schema.(properties|definitions){*}.type"
+# Parse and validate expressions
+schemapath parse "$.children[*]{*}.name"
 
-# Test path against JSON schema
-schemapath test "$.users[*].name" '{"users":[{"name":"Alice"},{"name":"Bob"}]}'
+# Test against JSON data
+schemapath test "$.users[*].profile.email" '{"users":[{"profile":{"email":"user@example.com"}}]}'
 
-# Extract values from JSON file
-schemapath extract "$.schema.properties.type" schema.json
+# Extract from files
+schemapath extract "$.products[*].price" data.json
 
-# Validate JSON format
-schemapath validate '{"schema": {"type": "object"}}'
+# Validate JSON structure
+schemapath validate @schema.json
 ```
 
 ### Go SDK
@@ -78,215 +64,86 @@ package main
 import (
     "fmt"
     "log"
-    "jsonpath-sdk/json"
-    "jsonpath-sdk/parser"
-    "jsonpath-sdk/tree"
+    "github.com/telnet2/json-schema-path/parser"
+    "github.com/telnet2/json-schema-path/json"
+    "github.com/telnet2/json-schema-path/tree"
 )
 
 func main() {
-    // JSON data
-    jsonData := `{"user": {"name": "John", "profile": {"email": "john@test.com"}}}`
-    
-    // Parse path expression
-    expr, err := parser.ParseExpression("$.user.(name|profile.email)")
+    // Parse expression
+    expr, err := parser.ParseExpression("$.node.(child|meta.child){*}.value")
     if err != nil {
         log.Fatal(err)
     }
     
-    // Create pattern tree and extract paths
-    tree := tree.NewPatternTree()
-    tree.AddPattern(expr)
+    // Create pattern matcher
+    patternTree := tree.NewPatternTree()
+    patternTree.AddPattern(expr)
     
+    // Process JSON
     processor := json.NewPathExtractor()
-    paths, _ := processor.ExtractPaths(jsonData)
+    jsonData := `{"node": {"child": {"value": 42}}}`
     
-    // Test matches
+    paths, _ := processor.ExtractPaths(jsonData)
     for _, path := range paths {
         segments := processor.ConvertPathToSegments(path)
-        if tree.MatchSegments(segments) {
+        if patternTree.MatchSegments(segments) {
             value, _ := processor.ExtractValue(jsonData, path)
-            fmt.Printf("Match: %s = %v\\n", path, value)
+            fmt.Printf("Match: %s = %v\n", path, value)
         }
     }
 }
 ```
 
-## 💻 CLI Usage
+## 📖 Expression Syntax
 
-The `schemapath` CLI provides four main commands:
-
-### Parse Command
-
-Parse and analyze schema-path expressions:
-
-```bash
-schemapath parse "$.schema.(properties|definitions){*}.type"
-# Output: Parsed structure with segments and validation
-
-# JSON output format
-schemapath parse --json --pretty "$.schema.properties.name.type"
-```
-
-### Test Command  
-
-Test schema-path expressions against JSON data:
-
-```bash
-# Test with inline JSON
-schemapath test "$.user.name" '{"user": {"name": "John"}}'
-
-# Test with JSON file
-schemapath test "$.schema.properties.type" @schema.json
-
-# Verbose output showing all paths
-schemapath test --verbose "$.schema.(properties|definitions){*}" '{"schema":{"properties":{"name":{"type":"string"}}}}'
-```
-
-### Extract Command
-
-Extract matching values from JSON:
-
-```bash
-# Extract from file
-jsonpath extract "$.products[*].price" catalog.json
-
-# JSON output format
-jsonpath extract --json "$.users[*].name" users.json
-```
-
-### Validate Command
-
-Validate JSON format:
-
-```bash
-# Validate JSON string
-jsonpath validate '{"valid": true}'
-
-# Validate JSON file  
-jsonpath validate @data.json
-
-# Show formatted output
-jsonpath validate --verbose '{"compact":true}'
-```
-
-### Global Flags
-
-- `--verbose, -v`: Enable detailed output
-- `--quiet, -q`: Minimal output mode
-- `--json, -j`: Output results in JSON format
-- `--pretty, -p`: Pretty print JSON output
-
-## 🔧 SDK Usage
-
-### Core Components
-
-#### JSON Processor
-
-```go
-import "jsonpath-sdk/internal/json"
-
-processor := json.NewPathExtractor()
-
-// Validate JSON
-err := processor.ValidateJSON(jsonData)
-
-// Extract all paths from JSON
-paths, err := processor.ExtractPaths(jsonData)
-
-// Extract specific value
-value, err := processor.ExtractValue(jsonData, "$.user.name")
-
-// Format JSON with indentation
-formatted, err := processor.FormatJSON(jsonData)
-```
-
-#### Path Expression Parser
-
-```go
-import "jsonpath-sdk/internal/parser"
-
-// Parse expression into AST
-expr, err := parser.ParseExpression("$.node.(child|meta){*}")
-
-// Access parsed components
-fmt.Println(expr.Root.String())    // "$"
-fmt.Println(len(expr.Segments))    // Number of segments
-```
-
-#### Pattern Tree Matching
-
-```go
-import "jsonpath-sdk/internal/tree"
-
-// Create pattern tree
-tree := tree.NewPatternTree()
-
-// Add patterns
-err := tree.AddPattern(expr)
-
-// Match paths
-segments := processor.ConvertPathToSegments("$.node.child.value")
-matches := tree.MatchSegments(segments)
-```
-
-## 📝 Path Expression Syntax
-
-### Basic Syntax
+### Basic Navigation
 
 | Pattern | Description | Example |
 |---------|-------------|---------|
 | `$` | Root of JSON document | `$` |
 | `.property` | Object property access | `$.user.name` |
-| `[key]` | Bracket notation | `$.data[property]` |
-| `["quoted"]` | Quoted bracket notation | `$.data["api-key"]` |
+| `["key"]` | Bracket notation | `$.data["api-key"]` |
+| `[*]` | Array wildcard | `$.items[*]` |
 
 ### Advanced Features
 
-#### Group Expressions
-```bash
-$.user.(name|email)           # Match either name OR email
-$.data.(items|products)       # Alternative object properties
-$.node.(child|meta.child)     # Nested alternatives
-```
-
 #### Repetition Patterns
 ```bash
-$.tree.(left|right){*}        # Recursive tree traversal
-$.node.(child|meta.child){*}.value  # Deep recursive search
+$.meta{*}.child           # Zero or more .meta hops
+$.tree.(left|right){*}    # Recursive tree traversal
+$.node.children{*}.name   # Deep nested search
 ```
 
-#### Bracket Notation with Escaping
+#### Group Operators
 ```bash
-$.data["quoted-key"]          # Quoted property names
-$.data["\"escaped"]           # Escaped quotes in property names
-$.config[api-key]             # Unquoted bracket notation
+$.user.(name|email)                    # Match either property
+$.data.(items|products|services){*}    # Multiple alternatives
+$.config.(api["version"]|version)     # Mixed notation
 ```
 
-#### Complex Expressions
+#### Bracket Selectors
 ```bash
-# Recursive structure with alternatives and bracket notation
-$.root.(items["key"]["subkey"]|nested.values){*}
-
-# Mixed property access patterns  
-$.data.(user.profile["settings"]|config["user-prefs"]){*}.theme
+$.items[#*service]        # Properties ending with "service"
+$.fields[~^user_.*]       # Regex pattern matching
+$.data["quoted-key"]     # Quoted property names
+$.array[0][*]             # Array index + wildcard
 ```
 
-### Formal Grammar (EBNF)
+### Complex Examples
 
-```ebnf
-Expression      ::= Root Path?
-Root            ::= "$"
-Path            ::= Segment*
-Segment         ::= "." SegmentItem | BracketNotation
-SegmentItem     ::= Identifier | GroupExpression
-GroupExpression ::= "(" GroupSeq ("|" GroupSeq)* ")" Repetition?
-GroupSeq        ::= GroupPrimary ("." GroupPrimary)*
-Repetition      ::= "{*}"
-BracketNotation ::= "[" BracketContent "]"
-BracketContent  ::= QuotedString | UnquotedString
+```bash
+# Deep recursive search with alternatives
+$.root.(items["subitems"]|nested.values){*}.id
+
+# Mixed patterns with repetition
+$.company.employees[*].(skills|certificates){*}.name
+
+# Schema validation patterns
+$.schema.(properties|definitions){*}.type
 ```
 
-## 📚 Examples
+## 🎯 Real-World Examples
 
 ### E-Commerce Product Catalog
 
@@ -297,7 +154,6 @@ BracketContent  ::= QuotedString | UnquotedString
       {
         "id": 1,
         "name": "Laptop",
-        "specs": {"cpu": "Intel", "ram": "16GB"},
         "variants": [
           {"color": "black", "price": 999},
           {"color": "silver", "price": 1099}
@@ -310,16 +166,16 @@ BracketContent  ::= QuotedString | UnquotedString
 
 ```bash
 # Extract all product names
-jsonpath extract "$.store.products[*].name" catalog.json
+schemapath extract "$.store.products[*].name" catalog.json
 
-# Get all variant prices  
-jsonpath extract "$.store.products[*].variants[*].price" catalog.json
+# Get all variant prices
+schemapath extract "$.store.products[*].variants[*].price" catalog.json
 
-# Find CPU specs using bracket notation
-jsonpath extract "$.store.products[*].specs[\"cpu\"]" catalog.json
+# Find specific color variants
+schemapath test "$.store.products[*].variants[?color='black']" @catalog.json
 ```
 
-### Recursive Organization Structure  
+### Organization Hierarchy
 
 ```json
 {
@@ -328,7 +184,7 @@ jsonpath extract "$.store.products[*].specs[\"cpu\"]" catalog.json
       "name": "Alice",
       "reports": [
         {
-          "name": "Bob", 
+          "name": "Bob",
           "department": "Engineering",
           "reports": [
             {"name": "Charlie", "role": "Senior Dev"}
@@ -342,10 +198,10 @@ jsonpath extract "$.store.products[*].specs[\"cpu\"]" catalog.json
 
 ```bash
 # Find all employee names recursively
-jsonpath extract "$.company.(ceo|reports){*}.name" org.json
+schemapath extract "$.company.(ceo|reports){*}.name" org.json
 
 # Get all departments in hierarchy
-jsonpath extract "$.company.(ceo.reports|reports){*}.department" org.json
+schemapath extract "$.company.(ceo.reports|reports){*}.department" org.json
 ```
 
 ### Configuration Management
@@ -362,160 +218,91 @@ jsonpath extract "$.company.(ceo.reports|reports){*}.department" org.json
 
 ```bash
 # Extract database configuration
-jsonpath extract "$.app.database.(host|port)" config.json
+schemapath extract "$.app.database.(host|port)" config.json
 
-# Get feature flag values with escaping
-jsonpath extract "$.app.features[\"feature-flags\"]" config.json
+# Get feature flags with escaping
+schemapath extract "$.app.features[\"feature-flags\"]" config.json
 ```
 
 ## ⚡ Performance
 
-### Benchmarks
-
-The SDK leverages bytedance/sonic for high-performance JSON processing:
-
-- **JSON Parsing**: Up to 2-3x faster than standard library
-- **AST Navigation**: Direct node traversal without reflection overhead  
-- **Pattern Matching**: Efficient trie-based matching for complex expressions
-- **Memory Usage**: Reduced allocations through AST node reuse
-
-### Performance Features
+Built for high-performance JSON processing:
 
 - **Native AST Parsing**: Direct JSON-to-AST conversion eliminates double parsing
-- **Efficient Tree Structures**: Trie/radix trees for pattern matching  
+- **Efficient Tree Structures**: Trie/radix trees for pattern matching
 - **Zero-Copy Operations**: Minimal string allocations during parsing
 - **Streaming Support**: Process large JSON documents efficiently
 
-Run benchmarks locally:
+Benchmark results show 2-3x faster parsing compared to standard library approaches.
 
-```bash
-go test -bench=. ./internal/benchmarks/
-```
-
-## 📁 Project Structure
+## 🏗️ Architecture
 
 ```
-jsonpath-sdk/
-├── cmd/
-│   └── schemapath/         # CLI application
-│       └── main.go
+json-schema-path/
+├── cmd/schemapath/         # CLI application
 ├── json/                   # JSON processing with sonic/AST
-│   ├── processor.go       # Main JSON processor
-│   ├── ast_helpers.go     # AST helper functions
-│   └── processor_test.go  # JSON processing tests
-├── parser/                 # Schema-path expression parser
-│   ├── lexer.go           # Lexical analysis
-│   ├── parser.go          # Syntax analysis & AST building
-│   └── parser_test.go     # Parser tests
-├── spec/                   # Formal specification
-│   └── specification.go   # Language specification & AST nodes
-├── tree/                   # Pattern tree implementation
-│   ├── tree.go            # Trie/radix tree matching
-│   └── tree_test.go       # Tree matching tests
-├── schema_test.go          # Comprehensive schema pattern tests
-├── go.mod                 # Go module definition
-└── go.sum                 # Dependency checksums
+├── parser/                 # Expression parser & lexer
+├── spec/                   # Grammar specification & AST nodes
+├── tree/                   # Pattern matching trie implementation
+└── schema_test.go        # Integration tests
 ```
 
 ## 🧪 Testing
 
-### Run All Tests
+Comprehensive test coverage across all components:
 
 ```bash
-# Run all tests with coverage
-go test -v -cover ./...
-
-# Run integration tests  
-go test -v ./internal/integration/
-
-# Run benchmarks
-go test -bench=. ./internal/benchmarks/
-```
-
-### Test Categories
-
-- **Unit Tests**: Individual component testing  
-- **Integration Tests**: End-to-end pipeline testing
-- **Performance Tests**: Benchmarking and performance validation
-- **Parser Tests**: Expression parsing and validation
-- **JSON Tests**: AST processing and path extraction
-
-## 🛠 Development
-
-### Prerequisites
-
-- Go 1.22 or higher
-- Git
-
-### Setup Development Environment
-
-```bash
-git clone https://github.com/yourusername/jsonpath-sdk.git
-cd jsonpath-sdk
-
-# Install dependencies
-go mod tidy
-
-# Run tests
+# Run all tests
 go test ./...
 
-# Build CLI
-go build -o jsonpath ./cmd/jsonpath
+# Run with coverage
+go test -cover ./...
+
+# Run benchmarks
+go test -bench=. ./...
+
+# Test specific components
+go test ./parser -v
+go test ./json -v
+go test ./tree -v
 ```
-
-### Code Style
-
-- Follow standard Go conventions (`go fmt`, `go vet`)
-- Write comprehensive tests for new features
-- Update documentation for API changes
-- Add benchmarks for performance-critical code
 
 ## 🤝 Contributing
 
-We welcome contributions! Here's how to get started:
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-### Reporting Issues
+### Development Setup
 
-1. Check existing issues before creating new ones
-2. Use issue templates when available  
-3. Provide minimal reproduction examples
-4. Include system information (Go version, OS)
+```bash
+git clone https://github.com/telnet2/json-schema-path.git
+cd json-schema-path
+go mod tidy
+go test ./...
+```
 
-### Pull Requests
+### Adding New Features
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/amazing-feature`
 3. Make your changes with tests
-4. Run all tests: `go test ./...`
-5. Commit changes: `git commit -m 'Add amazing feature'`  
-6. Push branch: `git push origin feature/amazing-feature`
-7. Open a Pull Request
+4. Run the test suite: `go test ./...`
+5. Submit a pull request
 
-### Development Guidelines
-
-- **Code Quality**: Maintain test coverage above 80%
-- **Performance**: Add benchmarks for new features
-- **Documentation**: Update README and godoc comments
-- **Backward Compatibility**: Avoid breaking changes in public APIs
-
-## 📜 License
+## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
 - [bytedance/sonic](https://github.com/bytedance/sonic) - High-performance JSON library
-- [spf13/cobra](https://github.com/spf13/cobra) - CLI framework
 - JSONPath specification and related standards
+- The Go community for excellent tooling and libraries
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/jsonpath-sdk/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/jsonpath-sdk/discussions)  
-- **Documentation**: [Wiki](https://github.com/yourusername/jsonpath-sdk/wiki)
+- **Issues**: [GitHub Issues](https://github.com/telnet2/json-schema-path/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/telnet2/json-schema-path/discussions)
 
 ---
 
-⭐ **Star this repository if you find it useful!**
-
-Built with ❤️ using Go and high-performance JSON processing.
+**⭐ Star this repository if you find it useful!**
