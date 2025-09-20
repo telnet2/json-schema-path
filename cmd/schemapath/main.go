@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,10 +18,11 @@ import (
 const version = "1.0.0"
 
 var (
-	verbose     bool
-	quiet       bool
-	outputJSON  bool
-	prettyPrint bool
+	verbose             bool
+	quiet               bool
+	outputJSON          bool
+	prettyPrint         bool
+	schemaTerminalsOnly bool
 )
 
 // logInfo prints info messages unless in JSON mode or quiet mode
@@ -349,6 +352,68 @@ var extractCmd = &cobra.Command{
 	},
 }
 
+var schemaCmd = &cobra.Command{
+	Use:   "schema [schema_file]",
+	Short: "Generate all schema paths from a JSON Schema document",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		filename := args[0]
+
+		data, err := ioutil.ReadFile(filename)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading schema file %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+
+		processor := jsonpkg.NewPathExtractor()
+
+		absPath, err := filepath.Abs(filename)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving schema path %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+
+		schemaPath := filepath.ToSlash(absPath)
+		if !strings.HasPrefix(schemaPath, "/") {
+			schemaPath = "/" + schemaPath
+		}
+
+		schemaURL := url.URL{Scheme: "file", Path: schemaPath}
+
+		opts := jsonpkg.SchemaPathOptions{TerminalsOnly: schemaTerminalsOnly}
+
+		paths, err := processor.ExtractSchemaPathsWithOptions(string(data), schemaURL.String(), opts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating schema paths: %v\n", err)
+			os.Exit(1)
+		}
+
+		if outputJSON {
+			result := map[string]interface{}{
+				"file":        filename,
+				"total_paths": len(paths),
+				"paths":       paths,
+			}
+
+			var output []byte
+			if prettyPrint {
+				output, _ = json.MarshalIndent(result, "", "  ")
+			} else {
+				output, _ = json.Marshal(result)
+			}
+			fmt.Println(string(output))
+			return
+		}
+
+		if !quiet {
+			fmt.Printf("Found %d schema paths:\n", len(paths))
+		}
+		for _, path := range paths {
+			fmt.Println(path)
+		}
+	},
+}
+
 func init() {
 	// Add global flags
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
@@ -358,12 +423,14 @@ func init() {
 
 	// Add command-specific flags
 	testCmd.Flags().StringP("file", "f", "", "Read JSON data from file")
+	schemaCmd.Flags().BoolVar(&schemaTerminalsOnly, "terminals-only", false, "Only emit terminal value schemas (exclude objects and arrays)")
 
 	// Add all commands
 	rootCmd.AddCommand(parseCmd)
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(extractCmd)
+	rootCmd.AddCommand(schemaCmd)
 }
 
 func main() {

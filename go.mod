@@ -4,6 +4,7 @@ go 1.22
 
 require (
 	github.com/bytedance/sonic v1.14.1
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/spf13/cobra v1.10.1
 )
 

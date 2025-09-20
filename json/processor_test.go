@@ -176,7 +176,7 @@ func TestExtractValue(t *testing.T) {
 	pe := NewPathExtractor()
 
 	jsonData := `{
-		"user": {
+                "user": {
 			"name": "John",
 			"contacts": [
 				{"type": "email", "value": "john@example.com"}
@@ -233,5 +233,170 @@ func TestExtractValue(t *testing.T) {
 				t.Errorf("ExtractValue(%s) = %v, expected %v", tt.path, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestExtractSchemaPaths(t *testing.T) {
+	pe := NewPathExtractor()
+
+	schema := `{
+                "type": "object",
+                "properties": {
+                        "name": {"type": "string"},
+                        "address": {
+                                "type": "object",
+                                "properties": {
+                                        "street": {"type": "string"},
+                                        "phones": {
+                                                "type": "array",
+                                                "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                                "type": {"type": "string"}
+                                                        }
+                                                }
+                                        }
+                                }
+                        }
+                }
+        }`
+
+	paths, err := pe.ExtractSchemaPaths(schema)
+	if err != nil {
+		t.Fatalf("ExtractSchemaPaths failed: %v", err)
+	}
+
+	expected := []string{
+		"$",
+		"$.address",
+		"$.address.phones",
+		"$.address.phones[*]",
+		"$.address.phones[*].type",
+		"$.address.street",
+		"$.name",
+	}
+
+	if len(paths) != len(expected) {
+		t.Fatalf("expected %d paths, got %d: %v", len(expected), len(paths), paths)
+	}
+
+	pathSet := make(map[string]bool)
+	for _, p := range paths {
+		pathSet[p] = true
+	}
+
+	for _, exp := range expected {
+		if !pathSet[exp] {
+			t.Errorf("expected schema path %s not found", exp)
+		}
+	}
+}
+
+func TestExtractSchemaPathsRecursiveSchema(t *testing.T) {
+	pe := NewPathExtractor()
+
+	schema := `{
+                "type": "object",
+                "properties": {
+                        "value": {"type": "string"},
+                        "child": {"$ref": "#"}
+                }
+        }`
+
+	paths, err := pe.ExtractSchemaPaths(schema)
+	if err != nil {
+		t.Fatalf("ExtractSchemaPaths failed: %v", err)
+	}
+
+	expected := []string{
+		"$",
+		"$.child{*}",
+		"$.child{*}.value",
+		"$.value",
+	}
+
+	if len(paths) != len(expected) {
+		t.Fatalf("expected %d paths, got %d: %v", len(expected), len(paths), paths)
+	}
+
+	pathSet := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		pathSet[p] = true
+	}
+
+	for _, exp := range expected {
+		if !pathSet[exp] {
+			t.Errorf("expected schema path %s not found", exp)
+		}
+	}
+
+	if pathSet["$.child.child"] {
+		t.Errorf("unexpected recursive path expansion included")
+	}
+	if pathSet["$.child"] {
+		t.Errorf("expected $.child to be consolidated into $.child{*}")
+	}
+	if pathSet["$.child.value"] {
+		t.Errorf("expected $.child.value to be consolidated into $.child{*}.value")
+	}
+}
+
+func TestExtractSchemaPathsTerminalsOnly(t *testing.T) {
+	pe := NewPathExtractor()
+
+	schema := `{
+                "type": "object",
+                "properties": {
+                        "name": {"type": "string"},
+                        "address": {
+                                "type": "object",
+                                "properties": {
+                                        "street": {"type": "string"},
+                                        "phones": {
+                                                "type": "array",
+                                                "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                                "type": {"type": "string"}
+                                                        }
+                                                }
+                                        }
+                                }
+                        }
+                }
+        }`
+
+	opts := SchemaPathOptions{TerminalsOnly: true}
+	paths, err := pe.ExtractSchemaPathsWithOptions(schema, defaultSchemaURL, opts)
+	if err != nil {
+		t.Fatalf("ExtractSchemaPathsWithOptions failed: %v", err)
+	}
+
+	expected := []string{
+		"$.address.phones[*].type",
+		"$.address.street",
+		"$.name",
+	}
+
+	if len(paths) != len(expected) {
+		t.Fatalf("expected %d paths, got %d: %v", len(expected), len(paths), paths)
+	}
+
+	pathSet := make(map[string]bool)
+	for _, p := range paths {
+		pathSet[p] = true
+	}
+
+	for _, exp := range expected {
+		if !pathSet[exp] {
+			t.Errorf("expected schema path %s not found", exp)
+		}
+	}
+
+	disallowed := []string{"$", "$.address", "$.address.phones", "$.address.phones[*]"}
+	for _, d := range disallowed {
+		if pathSet[d] {
+			t.Errorf("did not expect non-terminal path %s", d)
+		}
 	}
 }
