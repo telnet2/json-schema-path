@@ -1,0 +1,83 @@
+{
+  "data": {
+    "categories": [
+      {
+        "name": "Electronics",
+        "subcategories": [
+          {
+            "name": "Computers",
+            "items": [
+              {
+                "name": "Laptop",
+                "metadata": {
+                  "tags": ["portable", "work"],
+                  "specs": {
+                    "cpu": "Intel i7",
+                    "ram": "16GB"
+                  }
+                },
+                "variants": [
+                  {
+                    "name": "Pro",
+                    "pricing": {
+                      "retail": 1299,
+                      "wholesale": 999
+                    },
+                    "availability": {
+                      "stores": [
+                        {
+                          "location": "New York",
+                          "stock": 15,
+                          "details": {
+                            "address": "123 Main St",
+                            "contact": {
+                              "manager": "John Doe",
+                              "phone": "555-0123"
+                            }
+                          }
+                        },
+                        {
+                          "location": "Los Angeles",
+                          "stock": 8,
+                          "details": {
+                            "address": "456 Sunset Blvd",
+                            "contact": {
+                              "manager": "Jane Smith",
+                              "phone": "555-0456"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "Standard",
+                    "pricing": {
+                      "retail": 899,
+                      "wholesale": 699
+                    },
+                    "availability": {
+                      "stores": [
+                        {
+                          "location": "Chicago",
+                          "stock": 12,
+                          "details": {
+                            "address": "789 Lake Ave",
+                            "contact": {
+                              "manager": "Bob Johnson",
+                              "phone": "555-0789"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
