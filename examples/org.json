@@ -1,0 +1,16 @@
+{
+  "company": {
+    "ceo": {
+      "name": "Alice",
+      "reports": [
+        {
+          "name": "Bob",
+          "department": "Engineering",
+          "reports": [
+            {"name": "Charlie", "role": "Senior Dev"}
+          ]
+        }
+      ]
+    }
+  }
+}

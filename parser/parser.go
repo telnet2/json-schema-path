@@ -33,20 +33,55 @@ func (p *Parser) advance() {
 	p.current = p.tokens[p.position]
 }
 
+// ParserError represents a parsing error with position information
+type ParserError struct {
+	Position int
+	Message  string
+}
+
+func (e ParserError) Error() string {
+	return fmt.Sprintf("parse error at position %d: %s", e.Position, e.Message)
+}
+
 func (p *Parser) expect(tokenType spec.TokenType) error {
+	if err := p.checkBounds(); err != nil {
+		return err
+	}
+	
 	if p.current.Type != tokenType {
-		return fmt.Errorf("expected %v at position %d", tokenType, p.current.Position)
+		return ParserError{
+			Position: p.current.Position,
+			Message:  fmt.Sprintf("expected token type %d, got %d", tokenType, p.current.Type),
+		}
 	}
 	p.advance()
 	return nil
 }
 
+// checkBounds ensures the parser hasn't exceeded token bounds
+func (p *Parser) checkBounds() error {
+	if p.position >= len(p.tokens) {
+		return ParserError{
+			Position: p.position,
+			Message:  "unexpected end of input",
+		}
+	}
+	return nil
+}
+
 // Parse converts tokens into a PathExpression AST.
 func (p *Parser) Parse() (*spec.PathExpression, error) {
+	if err := p.checkBounds(); err != nil {
+		return nil, err
+	}
+	
 	expr := &spec.PathExpression{}
 
 	if err := p.expect(spec.TokenRoot); err != nil {
-		return nil, fmt.Errorf("expression must start with '$': %w", err)
+		return nil, ParserError{
+			Position: p.current.Position,
+			Message:  "expression must start with '$'",
+		}
 	}
 	expr.Root = &spec.RootNode{}
 
@@ -57,7 +92,10 @@ func (p *Parser) Parse() (*spec.PathExpression, error) {
 	expr.Segments = segments
 
 	if p.current.Type != spec.TokenEOF {
-		return nil, fmt.Errorf("unexpected token %v at position %d", p.current.Type, p.current.Position)
+		return nil, ParserError{
+			Position: p.current.Position,
+			Message:  fmt.Sprintf("unexpected token type %d", p.current.Type),
+		}
 	}
 	return expr, nil
 }
@@ -78,6 +116,10 @@ func (p *Parser) parsePath() ([]spec.ASTNode, error) {
 }
 
 func (p *Parser) parseSegment() (spec.ASTNode, error) {
+	if err := p.checkBounds(); err != nil {
+		return nil, err
+	}
+	
 	switch p.current.Type {
 	case spec.TokenDot:
 		p.advance()
@@ -88,7 +130,7 @@ func (p *Parser) parseSegment() (spec.ASTNode, error) {
 			return nil, err
 		}
 		// Check for repetition after bracket notation
-		if p.current.Type == spec.TokenStar {
+		if err := p.checkBounds(); err == nil && p.current.Type == spec.TokenStar {
 			p.advance()
 			return &spec.RepetitionNode{Sequence: []spec.ASTNode{bracket}}, nil
 		}
@@ -99,13 +141,20 @@ func (p *Parser) parseSegment() (spec.ASTNode, error) {
 }
 
 func (p *Parser) parseSegmentItem() (spec.ASTNode, error) {
+	if err := p.checkBounds(); err != nil {
+		return nil, err
+	}
+	
 	switch p.current.Type {
 	case spec.TokenIdentifier:
 		return p.parseIdentifierWithSuffix()
 	case spec.TokenLParen:
 		return p.parseGroupExpression()
 	default:
-		return nil, fmt.Errorf("expected property or group at position %d", p.current.Position)
+		return nil, ParserError{
+			Position: p.current.Position,
+			Message:  fmt.Sprintf("expected property or group, got token type %d", p.current.Type),
+		}
 	}
 }
 

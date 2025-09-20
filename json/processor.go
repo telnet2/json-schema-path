@@ -11,6 +11,20 @@ import (
 	"github.com/telnet2/json-schema-path/spec"
 )
 
+// ProcessingError represents an error during JSON processing
+type ProcessingError struct {
+	Operation string
+	Path      string
+	Message   string
+}
+
+func (e ProcessingError) Error() string {
+	if e.Path != "" {
+		return fmt.Sprintf("%s at path '%s': %s", e.Operation, e.Path, e.Message)
+	}
+	return fmt.Sprintf("%s: %s", e.Operation, e.Message)
+}
+
 // PathExtractor extracts JSON paths from JSON data using sonic
 type PathExtractor struct{}
 
@@ -23,7 +37,10 @@ func NewPathExtractor() *PathExtractor {
 func (pe *PathExtractor) ExtractPaths(jsonData string) ([]string, error) {
 	root, err := sonic.Get([]byte(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON to AST: %w", err)
+		return nil, ProcessingError{
+			Operation: "parsing JSON",
+			Message:   err.Error(),
+		}
 	}
 
 	paths := []string{}
@@ -35,10 +52,12 @@ func (pe *PathExtractor) ExtractPaths(jsonData string) ([]string, error) {
 func (pe *PathExtractor) ExtractValue(jsonData string, path string) (interface{}, error) {
 	root, err := sonic.Get([]byte(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON to AST: %w", err)
+		return nil, ProcessingError{
+			Operation: "parsing JSON",
+			Message:   err.Error(),
+		}
 	}
 
-	// Convert path to segments and navigate using AST
 	segments := pe.ConvertPathToSegments(path)
 	current := &root
 
@@ -47,31 +66,52 @@ func (pe *PathExtractor) ExtractValue(jsonData string, path string) (interface{}
 		case ast.V_OBJECT:
 			child := current.Get(segment.Key)
 			if !child.Exists() {
-				return nil, fmt.Errorf("property '%s' not found", segment.Key)
+				return nil, ProcessingError{
+					Operation: "extracting value",
+					Path:      path,
+					Message:   fmt.Sprintf("property '%s' not found", segment.Key),
+				}
 			}
 			current = child
 		case ast.V_ARRAY:
 			if segment.Type != spec.SegmentArrayIndex {
-				return nil, fmt.Errorf("expected array index, got property '%s'", segment.Key)
+				return nil, ProcessingError{
+					Operation: "extracting value",
+					Path:      path,
+					Message:   fmt.Sprintf("expected array index, got property '%s'", segment.Key),
+				}
 			}
 			child := current.Index(segment.Index)
 			if !child.Exists() {
-				return nil, fmt.Errorf("array index %d out of bounds", segment.Index)
+				return nil, ProcessingError{
+					Operation: "extracting value",
+					Path:      path,
+					Message:   fmt.Sprintf("array index %d out of bounds", segment.Index),
+				}
 			}
 			current = child
 		default:
-			return nil, fmt.Errorf("cannot navigate further: %s is not an object or array", segment.Key)
+			return nil, ProcessingError{
+				Operation: "extracting value",
+				Path:      path,
+				Message:   fmt.Sprintf("cannot navigate further: %s is not an object or array", segment.Key),
+			}
 		}
 	}
 
-	// Convert AST node to interface{} for return
 	return pe.astNodeToInterface(current)
 }
 
 // ValidateJSON validates if a string is valid JSON using sonic AST
 func (pe *PathExtractor) ValidateJSON(jsonData string) error {
 	_, err := sonic.Get([]byte(jsonData))
-	return err
+	if err != nil {
+		return ProcessingError{
+			Operation: "validating JSON",
+			Message:   err.Error(),
+		}
+	}
+	return nil
 }
 
 // extractPathsFromAST recursively extracts paths from AST nodes

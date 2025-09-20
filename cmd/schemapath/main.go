@@ -10,6 +10,7 @@ import (
 
 	jsonpkg "github.com/telnet2/json-schema-path/json"
 	"github.com/telnet2/json-schema-path/parser"
+	"github.com/telnet2/json-schema-path/spec"
 	"github.com/telnet2/json-schema-path/tree"
 
 	"github.com/spf13/cobra"
@@ -24,6 +25,55 @@ var (
 	prettyPrint         bool
 	schemaTerminalsOnly bool
 )
+
+// Constants for magic values
+const (
+	filePrefix = "@"
+)
+
+// Helper functions for improved readability
+
+// readJSONFile reads JSON data from a file, handling the @ prefix convention
+func readJSONFile(filename string) (string, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return "", fmt.Errorf("reading file %s: %w", filename, err)
+	}
+	return string(data), nil
+}
+
+// formatOutput formats data as JSON with optional pretty printing
+func formatOutput(data interface{}) (string, error) {
+	var output []byte
+	var err error
+	
+	if prettyPrint {
+		output, err = json.MarshalIndent(data, "", "  ")
+	} else {
+		output, err = json.Marshal(data)
+	}
+	
+	if err != nil {
+		return "", fmt.Errorf("formatting JSON output: %w", err)
+	}
+	return string(output), nil
+}
+
+// handleFileInput checks if input starts with @ and reads from file if needed
+func handleFileInput(input string) (string, error) {
+	if !strings.HasPrefix(input, filePrefix) {
+		return input, nil
+	}
+	
+	filename := strings.TrimPrefix(input, filePrefix)
+	return readJSONFile(filename)
+}
+
+// exitWithError prints error message and exits with code 1
+func exitWithError(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	os.Exit(1)
+}
 
 // logInfo prints info messages unless in JSON mode or quiet mode
 func logInfo(format string, args ...interface{}) {
@@ -58,50 +108,52 @@ var parseCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		expression := args[0]
-
 		logInfo("Parsing expression: %s\n", expression)
 
-		// Parse the expression using the parser
 		expr, err := parser.ParseExpression(expression)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing expression: %v\n", err)
-			os.Exit(1)
+			exitWithError("Error parsing expression: %v", err)
 		}
 
 		if outputJSON {
-			// Output as JSON structure
-			result := map[string]interface{}{
-				"expression":    expression,
-				"parsed":        expr.String(),
-				"root":          expr.Root.String(),
-				"segment_count": len(expr.Segments),
-				"segments":      make([]string, len(expr.Segments)),
+			result := createParseResult(expression, expr)
+			output, err := formatOutput(result)
+			if err != nil {
+				exitWithError("Error formatting output: %v", err)
 			}
-			for i, segment := range expr.Segments {
-				result["segments"].([]string)[i] = segment.String()
-			}
-
-			var output []byte
-			if prettyPrint {
-				output, _ = json.MarshalIndent(result, "", "  ")
-			} else {
-				output, _ = json.Marshal(result)
-			}
-			fmt.Println(string(output))
+			fmt.Println(output)
 		} else {
-			// Display the parsed structure in human-readable format
-			fmt.Printf("Parsed structure: %s\n", expr.String())
-			fmt.Printf("Root: %s\n", expr.Root.String())
-			fmt.Printf("Segments (%d):\n", len(expr.Segments))
-			for i, segment := range expr.Segments {
-				fmt.Printf("  [%d]: %s\n", i, segment.String())
-			}
-
-			if verbose {
-				fmt.Printf("\nExpression validation: ✓ Valid\n")
-			}
+			displayParseResult(expr)
 		}
 	},
+}
+
+// createParseResult creates a structured result for JSON output
+func createParseResult(expression string, expr *spec.PathExpression) map[string]interface{} {
+	result := map[string]interface{}{
+		"expression":    expression,
+		"parsed":        expr.String(),
+		"root":          expr.Root.String(),
+		"segment_count": len(expr.Segments),
+		"segments":      make([]string, len(expr.Segments)),
+	}
+	for i, segment := range expr.Segments {
+		result["segments"].([]string)[i] = segment.String()
+	}
+	return result
+}
+
+// displayParseResult displays parsing results in human-readable format
+func displayParseResult(expr *spec.PathExpression) {
+	fmt.Printf("Parsed structure: %s\n", expr.String())
+	fmt.Printf("Root: %s\n", expr.Root.String())
+	fmt.Printf("Segments (%d):\n", len(expr.Segments))
+	for i, segment := range expr.Segments {
+		fmt.Printf("  [%d]: %s\n", i, segment.String())
+	}
+	if verbose {
+		fmt.Printf("\nExpression validation: ✓ Valid\n")
+	}
 }
 
 var testCmd = &cobra.Command{
@@ -116,106 +168,123 @@ var testCmd = &cobra.Command{
 			fmt.Printf("Testing expression: %s\n", expression)
 		}
 
-		// Handle file input
-		if strings.HasPrefix(jsonData, "@") {
-			filename := jsonData[1:]
-			data, err := os.ReadFile(filename)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
-				os.Exit(1)
-			}
-			jsonData = string(data)
+		// Handle file input and validation
+		processedData, err := handleFileInput(jsonData)
+		if err != nil {
+			exitWithError("Error handling file input: %v", err)
 		}
 
-		// Validate and format JSON
 		processor := jsonpkg.NewPathExtractor()
-		if err := processor.ValidateJSON(jsonData); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Invalid JSON data: %v\n", err)
-			os.Exit(1)
+		if err := processor.ValidateJSON(processedData); err != nil {
+			exitWithError("Error: Invalid JSON data: %v", err)
 		}
 
 		if verbose {
 			fmt.Printf("JSON data is valid\n")
 		}
 
-		// Parse the expression
-		expr, err := parser.ParseExpression(expression)
+		// Test expression matching
+		matchResult, err := testExpressionMatching(expression, processedData, processor)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing expression: %v\n", err)
-			os.Exit(1)
+			exitWithError("Error testing expression: %v", err)
 		}
 
-		// Build pattern tree
-		patternTree := tree.NewPatternTree()
-		if err := patternTree.AddPattern(expr); err != nil {
-			fmt.Fprintf(os.Stderr, "Error building pattern tree: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Extract all paths from JSON
-		paths, err := processor.ExtractPaths(jsonData)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error extracting paths: %v\n", err)
-			os.Exit(1)
-		}
-
-		matchCount := 0
-		matchingPaths := []string{}
-
-		for _, path := range paths {
-			segments := processor.ConvertPathToSegments(path)
-			matches := patternTree.MatchSegments(segments)
-
-			if matches {
-				matchCount++
-				matchingPaths = append(matchingPaths, path)
-				if verbose || !quiet {
-					fmt.Printf("  ✓ %s (matches)\n", path)
-				}
-			} else if verbose {
-				fmt.Printf("  ✗ %s\n", path)
-			}
-		}
-
+		// Output results
 		if outputJSON {
-			result := map[string]interface{}{
-				"expression":     expression,
-				"total_paths":    len(paths),
-				"matching_paths": matchCount,
-				"matches":        matchingPaths,
-				"success":        matchCount > 0,
-			}
-			if verbose {
-				result["all_paths"] = paths
-			}
-
-			var output []byte
-			if prettyPrint {
-				output, _ = json.MarshalIndent(result, "", "  ")
-			} else {
-				output, _ = json.Marshal(result)
-			}
-			fmt.Println(string(output))
+			outputResultsJSON(expression, matchResult)
 		} else {
-			if !quiet {
-				fmt.Printf("\nFound %d paths in JSON:\n", len(paths))
-			}
-
-			if !quiet {
-				fmt.Printf("\nResult: %d out of %d paths match the expression\n", matchCount, len(paths))
-				if matchCount > 0 {
-					fmt.Printf("✓ Expression matches JSON data\n")
-				} else {
-					fmt.Printf("✗ Expression does not match JSON data\n")
-				}
-			}
+			outputResultsText(expression, matchResult)
 		}
 
 		// Set exit code based on match result for scripting
-		if matchCount == 0 {
+		if matchResult.matchCount == 0 {
 			os.Exit(1)
 		}
 	},
+}
+
+// matchResult holds the results of expression matching
+type matchResult struct {
+	expression     string
+	totalPaths     int
+	matchCount     int
+	matchingPaths  []string
+	allPaths       []string
+}
+
+// testExpressionMatching tests if an expression matches JSON data
+func testExpressionMatching(expression string, jsonData string, processor *jsonpkg.PathExtractor) (*matchResult, error) {
+	expr, err := parser.ParseExpression(expression)
+	if err != nil {
+		return nil, fmt.Errorf("parsing expression: %w", err)
+	}
+
+	patternTree := tree.NewPatternTree()
+	if err := patternTree.AddPattern(expr); err != nil {
+		return nil, fmt.Errorf("building pattern tree: %w", err)
+	}
+
+	paths, err := processor.ExtractPaths(jsonData)
+	if err != nil {
+		return nil, fmt.Errorf("extracting paths: %w", err)
+	}
+
+	result := &matchResult{
+		expression: expression,
+		totalPaths: len(paths),
+		allPaths:   paths,
+	}
+
+	for _, path := range paths {
+		segments := processor.ConvertPathToSegments(path)
+		matches := patternTree.MatchSegments(segments)
+
+		if matches {
+			result.matchCount++
+			result.matchingPaths = append(result.matchingPaths, path)
+			if verbose || !quiet {
+				fmt.Printf("  ✓ %s (matches)\n", path)
+			}
+		} else if verbose {
+			fmt.Printf("  ✗ %s\n", path)
+		}
+	}
+
+	return result, nil
+}
+
+// outputResultsJSON outputs results in JSON format
+func outputResultsJSON(expression string, result *matchResult) {
+	output := map[string]interface{}{
+		"expression":     expression,
+		"total_paths":    result.totalPaths,
+		"matching_paths": result.matchCount,
+		"matches":        result.matchingPaths,
+		"success":        result.matchCount > 0,
+	}
+	if verbose {
+		output["all_paths"] = result.allPaths
+	}
+
+	formatted, err := formatOutput(output)
+	if err != nil {
+		exitWithError("Error formatting JSON output: %v", err)
+	}
+	fmt.Println(formatted)
+}
+
+// outputResultsText outputs results in text format
+func outputResultsText(expression string, result *matchResult) {
+	if !quiet {
+		fmt.Printf("\nFound %d paths in JSON:\n", result.totalPaths)
+		fmt.Printf("\nResult: %d out of %d paths match the expression\n", 
+			result.matchCount, result.totalPaths)
+		if result.matchCount > 0 {
+			fmt.Printf("✓ Expression matches JSON data\n")
+		} else {
+			fmt.Printf("✗ Expression does not match JSON data\n")
+		}
+	}
 }
 
 
@@ -227,89 +296,96 @@ var extractCmd = &cobra.Command{
 		expression := args[0]
 		filename := args[1]
 
-		// Read JSON file
-		data, err := os.ReadFile(filename)
+		jsonData, err := readJSONFile(filename)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
-			os.Exit(1)
+			exitWithError("Error reading file: %v", err)
 		}
-		jsonData := string(data)
 
 		processor := jsonpkg.NewPathExtractor()
 		if err := processor.ValidateJSON(jsonData); err != nil {
-			fmt.Fprintf(os.Stderr, "Invalid JSON in file %s: %v\n", filename, err)
-			os.Exit(1)
+			exitWithError("Invalid JSON in file %s: %v", filename, err)
 		}
 
-		// Parse the expression
-		expr, err := parser.ParseExpression(expression)
+		values, paths, err := extractValuesFromJSON(expression, jsonData, processor)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing expression: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Build pattern tree and extract matching paths
-		patternTree := tree.NewPatternTree()
-		if err := patternTree.AddPattern(expr); err != nil {
-			fmt.Fprintf(os.Stderr, "Error building pattern tree: %v\n", err)
-			os.Exit(1)
-		}
-
-		paths, err := processor.ExtractPaths(jsonData)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error extracting paths: %v\n", err)
-			os.Exit(1)
-		}
-
-		matchingValues := []interface{}{}
-		matchingPaths := []string{}
-
-		for _, path := range paths {
-			segments := processor.ConvertPathToSegments(path)
-			if patternTree.MatchSegments(segments) {
-				matchingPaths = append(matchingPaths, path)
-
-				// Extract the actual value
-				value, err := processor.ExtractValue(jsonData, path)
-				if err == nil {
-					matchingValues = append(matchingValues, value)
-				}
-			}
+			exitWithError("Error extracting values: %v", err)
 		}
 
 		if outputJSON {
-			result := map[string]interface{}{
-				"expression": expression,
-				"file":       filename,
-				"matches":    len(matchingValues),
-				"values":     matchingValues,
-			}
-			if verbose {
-				result["paths"] = matchingPaths
-			}
-
-			var output []byte
-			if prettyPrint {
-				output, _ = json.MarshalIndent(result, "", "  ")
-			} else {
-				output, _ = json.Marshal(result)
-			}
-			fmt.Println(string(output))
+			outputExtractResultsJSON(expression, filename, values, paths)
 		} else {
-			if !quiet && len(matchingValues) > 0 {
-				fmt.Printf("Found %d matching values:\n", len(matchingValues))
-				for i, value := range matchingValues {
-					fmt.Printf("[%d] %s: %v\n", i+1, matchingPaths[i], value)
-				}
-			} else if !quiet {
-				fmt.Println("No matching values found")
-			}
+			outputExtractResultsText(values, paths)
 		}
 
-		if len(matchingValues) == 0 {
+		if len(values) == 0 {
 			os.Exit(1)
 		}
 	},
+}
+
+// extractValuesFromJSON extracts values matching the expression from JSON data
+func extractValuesFromJSON(expression string, jsonData string, processor *jsonpkg.PathExtractor) ([]interface{}, []string, error) {
+	expr, err := parser.ParseExpression(expression)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing expression: %w", err)
+	}
+
+	patternTree := tree.NewPatternTree()
+	if err := patternTree.AddPattern(expr); err != nil {
+		return nil, nil, fmt.Errorf("building pattern tree: %w", err)
+	}
+
+	paths, err := processor.ExtractPaths(jsonData)
+	if err != nil {
+		return nil, nil, fmt.Errorf("extracting paths: %w", err)
+	}
+
+	var values []interface{}
+	var matchingPaths []string
+
+	for _, path := range paths {
+		segments := processor.ConvertPathToSegments(path)
+		if patternTree.MatchSegments(segments) {
+			value, err := processor.ExtractValue(jsonData, path)
+			if err == nil {
+				values = append(values, value)
+				matchingPaths = append(matchingPaths, path)
+			}
+		}
+	}
+
+	return values, matchingPaths, nil
+}
+
+// outputExtractResultsJSON outputs extraction results in JSON format
+func outputExtractResultsJSON(expression, filename string, values []interface{}, paths []string) {
+	result := map[string]interface{}{
+		"expression": expression,
+		"file":       filename,
+		"matches":    len(values),
+		"values":     values,
+	}
+	if verbose {
+		result["paths"] = paths
+	}
+
+	output, err := formatOutput(result)
+	if err != nil {
+		exitWithError("Error formatting output: %v", err)
+	}
+	fmt.Println(output)
+}
+
+// outputExtractResultsText outputs extraction results in text format
+func outputExtractResultsText(values []interface{}, paths []string) {
+	if !quiet && len(values) > 0 {
+		fmt.Printf("Found %d matching values:\n", len(values))
+		for i, value := range values {
+			fmt.Printf("[%d] %s: %v\n", i+1, paths[i], value)
+		}
+	} else if !quiet {
+		fmt.Println("No matching values found")
+	}
 }
 
 var schemaCmd = &cobra.Command{
@@ -319,59 +395,72 @@ var schemaCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		filename := args[0]
 
-		data, err := os.ReadFile(filename)
+		schemaData, err := readJSONFile(filename)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading schema file %s: %v\n", filename, err)
-			os.Exit(1)
+			exitWithError("Error reading schema file: %v", err)
 		}
 
-		processor := jsonpkg.NewPathExtractor()
-
-		absPath, err := filepath.Abs(filename)
+		paths, err := extractSchemaPaths(schemaData, filename)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error resolving schema path %s: %v\n", filename, err)
-			os.Exit(1)
-		}
-
-		schemaPath := filepath.ToSlash(absPath)
-		if !strings.HasPrefix(schemaPath, "/") {
-			schemaPath = "/" + schemaPath
-		}
-
-		schemaURL := url.URL{Scheme: "file", Path: schemaPath}
-
-		opts := jsonpkg.SchemaPathOptions{TerminalsOnly: schemaTerminalsOnly}
-
-		paths, err := processor.ExtractSchemaPathsWithOptions(string(data), schemaURL.String(), opts)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating schema paths: %v\n", err)
-			os.Exit(1)
+			exitWithError("Error generating schema paths: %v", err)
 		}
 
 		if outputJSON {
-			result := map[string]interface{}{
-				"file":        filename,
-				"total_paths": len(paths),
-				"paths":       paths,
-			}
-
-			var output []byte
-			if prettyPrint {
-				output, _ = json.MarshalIndent(result, "", "  ")
-			} else {
-				output, _ = json.Marshal(result)
-			}
-			fmt.Println(string(output))
-			return
-		}
-
-		if !quiet {
-			fmt.Printf("Found %d schema paths:\n", len(paths))
-		}
-		for _, path := range paths {
-			fmt.Println(path)
+			outputSchemaResultsJSON(filename, paths)
+		} else {
+			outputSchemaResultsText(paths)
 		}
 	},
+}
+
+// extractSchemaPaths extracts all schema paths from a schema file
+func extractSchemaPaths(schemaData string, filename string) ([]string, error) {
+	processor := jsonpkg.NewPathExtractor()
+
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		return nil, fmt.Errorf("resolving schema path: %w", err)
+	}
+
+	schemaPath := filepath.ToSlash(absPath)
+	if !strings.HasPrefix(schemaPath, "/") {
+		schemaPath = "/" + schemaPath
+	}
+
+	schemaURL := url.URL{Scheme: "file", Path: schemaPath}
+	opts := jsonpkg.SchemaPathOptions{TerminalsOnly: schemaTerminalsOnly}
+
+	paths, err := processor.ExtractSchemaPathsWithOptions(schemaData, schemaURL.String(), opts)
+	if err != nil {
+		return nil, fmt.Errorf("extracting schema paths: %w", err)
+	}
+
+	return paths, nil
+}
+
+// outputSchemaResultsJSON outputs schema results in JSON format
+func outputSchemaResultsJSON(filename string, paths []string) {
+	result := map[string]interface{}{
+		"file":        filename,
+		"total_paths": len(paths),
+		"paths":       paths,
+	}
+
+	output, err := formatOutput(result)
+	if err != nil {
+		exitWithError("Error formatting output: %v", err)
+	}
+	fmt.Println(output)
+}
+
+// outputSchemaResultsText outputs schema results in text format
+func outputSchemaResultsText(paths []string) {
+	if !quiet {
+		fmt.Printf("Found %d schema paths:\n", len(paths))
+	}
+	for _, path := range paths {
+		fmt.Println(path)
+	}
 }
 
 func init() {

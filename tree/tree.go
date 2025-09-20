@@ -4,29 +4,72 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"strings"
 
 	"github.com/telnet2/json-schema-path/spec"
 )
 
+// Transition types for pattern matching
+type transition interface {
+	matches(segment spec.PathSegment) bool
+}
+
+// node represents a state in the pattern matching trie
 type node struct {
-	properties        map[string]*node
-	arrayIndices      map[int]*node
-	arrayWildcard     *node
-	propertyWildcards map[string]*wildcardTransition
-	regexTransitions  map[string]*regexTransition
-	epsilon           []*node
-	terminal          bool
+	properties        map[string]*node        // Direct property transitions
+	arrayIndices      map[int]*node           // Direct array index transitions
+	arrayWildcard     *node                   // [*] wildcard transition
+	propertyWildcards map[string]*wildcardTransition // Property wildcard transitions
+	regexTransitions  map[string]*regexTransition    // Regex pattern transitions
+	epsilon           []*node                 // Epsilon (empty) transitions
+	terminal          bool                    // Whether this is an accepting state
 }
 
+// wildcardTransition represents a property wildcard transition (e.g., [#*suffix])
 type wildcardTransition struct {
-	pattern string
-	target  *node
+	pattern string // Wildcard pattern like "*suffix" or "prefix*"
+	target  *node  // Target node for this transition
 }
 
+// regexTransition represents a regex pattern transition (e.g., [~pattern])
 type regexTransition struct {
-	pattern string
-	expr    *regexp.Regexp
-	target  *node
+	pattern string         // Original pattern string for debugging
+	expr    *regexp.Regexp // Compiled regex expression
+	target  *node          // Target node for this transition
+}
+
+// matches implements the transition interface for wildcardTransition
+func (wt *wildcardTransition) matches(segment spec.PathSegment) bool {
+	if segment.Type != spec.SegmentProperty {
+		return false
+	}
+	
+	// Handle different wildcard patterns
+	switch {
+	case strings.HasPrefix(wt.pattern, "*") && strings.HasSuffix(wt.pattern, "*"):
+		// *contains* pattern
+		contains := wt.pattern[1 : len(wt.pattern)-1]
+		return strings.Contains(segment.Key, contains)
+	case strings.HasPrefix(wt.pattern, "*"):
+		// *suffix pattern
+		suffix := wt.pattern[1:]
+		return strings.HasSuffix(segment.Key, suffix)
+	case strings.HasSuffix(wt.pattern, "*"):
+		// prefix* pattern
+		prefix := wt.pattern[:len(wt.pattern)-1]
+		return strings.HasPrefix(segment.Key, prefix)
+	default:
+		// exact match (shouldn't happen with wildcards, but handle gracefully)
+		return segment.Key == wt.pattern
+	}
+}
+
+// matches implements the transition interface for regexTransition
+func (rt *regexTransition) matches(segment spec.PathSegment) bool {
+	if segment.Type != spec.SegmentProperty {
+		return false
+	}
+	return rt.expr.MatchString(segment.Key)
 }
 
 // PatternTree stores compiled schema-path patterns as an epsilon-NFA backed trie.
@@ -39,15 +82,33 @@ func NewPatternTree() *PatternTree {
 	return &PatternTree{root: &node{}}
 }
 
+// PatternError represents an error during pattern compilation
+type PatternError struct {
+	Pattern string
+	Message string
+}
+
+func (e PatternError) Error() string {
+	if e.Pattern != "" {
+		return fmt.Sprintf("pattern error in '%s': %s", e.Pattern, e.Message)
+	}
+	return fmt.Sprintf("pattern error: %s", e.Message)
+}
+
 // AddPattern compiles the given path expression into the trie.
 func (t *PatternTree) AddPattern(expr *spec.PathExpression) error {
-	if expr == nil || expr.Root == nil {
-		return fmt.Errorf("expression is nil")
+	if expr == nil {
+		return PatternError{Message: "expression is nil"}
 	}
+	if expr.Root == nil {
+		return PatternError{Message: "expression root is nil"}
+	}
+	
 	endNodes, err := t.addSegments([]*node{t.root}, expr.Segments)
 	if err != nil {
 		return err
 	}
+	
 	for _, n := range endNodes {
 		n.terminal = true
 	}
@@ -77,7 +138,9 @@ func (t *PatternTree) applySegment(starts []*node, segment spec.ASTNode) ([]*nod
 	case *spec.RepetitionNode:
 		return t.applyRepetition(starts, node)
 	default:
-		return nil, fmt.Errorf("unsupported AST node %T", segment)
+		return nil, PatternError{
+			Message: fmt.Sprintf("unsupported AST node type %T", segment),
+		}
 	}
 }
 

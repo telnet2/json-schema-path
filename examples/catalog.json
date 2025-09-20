@@ -1,0 +1,14 @@
+{
+  "store": {
+    "products": [
+      {
+        "id": 1,
+        "name": "Laptop",
+        "variants": [
+          {"color": "black", "price": 999},
+          {"color": "silver", "price": 1099}
+        ]
+      }
+    ]
+  }
+}
