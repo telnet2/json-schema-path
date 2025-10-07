@@ -12,9 +12,11 @@ import (
 
 // ComplexPatternValidator provides validation with full json-schema-path pattern support
 type ComplexPatternValidator struct {
-	config      *GenericValidatorConfig
-	patternTree *tree.PatternTree
-	processor   *jsonpkg.PathExtractor
+	config         *GenericValidatorConfig
+	patternTree    *tree.PatternTree
+	processor      *jsonpkg.PathExtractor
+	parsedPatterns map[string]*tree.PatternTree // Cached parsed patterns for fast metadata lookup
+	patternToMeta  map[string]json.RawMessage   // Pattern to metadata mapping
 }
 
 // NewComplexPatternValidator creates a validator with full pattern support using direct configuration
@@ -22,23 +24,33 @@ func NewComplexPatternValidator(config *GenericValidatorConfig) (*ComplexPattern
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
-	
+
 	processor := jsonpkg.NewPathExtractor()
 	patternTree := tree.NewPatternTree()
+	parsedPatterns := make(map[string]*tree.PatternTree, len(config.Paths))
+	patternToMeta := make(map[string]json.RawMessage, len(config.Paths))
 
-	// Parse all configured patterns
-	for patternStr := range config.Paths {
+	// Parse all configured patterns once and cache them
+	for patternStr, metadata := range config.Paths {
 		expr, err := parser.ParseExpression(patternStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse pattern %s: %w", patternStr, err)
 		}
 		patternTree.AddPattern(expr)
+
+		// Cache individual pattern tree for fast metadata lookup
+		individualTree := tree.NewPatternTree()
+		individualTree.AddPattern(expr)
+		parsedPatterns[patternStr] = individualTree
+		patternToMeta[patternStr] = metadata
 	}
 
 	return &ComplexPatternValidator{
-		config:      config,
-		patternTree: patternTree,
-		processor:   processor,
+		config:         config,
+		patternTree:    patternTree,
+		processor:      processor,
+		parsedPatterns: parsedPatterns,
+		patternToMeta:  patternToMeta,
 	}, nil
 }
 
@@ -61,7 +73,6 @@ func NewComplexPatternValidatorFromPaths(paths []string, metadata map[string]int
 // Validate performs validation using complex pattern matching
 func (v *ComplexPatternValidator) Validate(jsonData string) (*ValidationReport, error) {
 	start := time.Now()
-	results := []ValidationResult{}
 
 	// Extract all paths from JSON data
 	paths, err := v.processor.ExtractPaths(jsonData)
@@ -69,21 +80,25 @@ func (v *ComplexPatternValidator) Validate(jsonData string) (*ValidationReport, 
 		return nil, fmt.Errorf("failed to extract paths: %w", err)
 	}
 
+	// Pre-allocate results slice with reasonable capacity
+	results := make([]ValidationResult, 0, len(paths)/4)
+	timestamp := time.Now() // Single timestamp for all results
+
 	// Check each path against configured patterns
 	for _, path := range paths {
 		segments := v.processor.ConvertPathToSegments(path)
-		
+
 		// Check if this path matches any configured pattern
 		if v.patternTree.MatchSegments(segments) {
 			value, _ := v.processor.ExtractValue(jsonData, path)
 			metadata := v.getMetadataForPath(path)
-			
+
 			result := ValidationResult{
-				Path:      path,
-				Value:     value,
-				Metadata:  metadata,
-				Timestamp: time.Now(),
-				Valid:     true,
+				Path:        path,
+				Value:       value,
+				Metadata:    metadata,
+				Timestamp:   timestamp, // Reuse same timestamp
+				Valid:       true,
 				Description: fmt.Sprintf("Path %s matches configured pattern", path),
 			}
 			results = append(results, result)
@@ -147,20 +162,11 @@ func (v *ComplexPatternValidator) getMetadataForPath(path string) json.RawMessag
 		return metadata
 	}
 
-	// Try to find matching pattern by checking each configured pattern
+	// Use pre-parsed patterns for fast lookup - NO temp tree creation!
 	segments := v.processor.ConvertPathToSegments(path)
-	for patternStr, metadata := range v.config.Paths {
-		expr, err := parser.ParseExpression(patternStr)
-		if err != nil {
-			continue
-		}
-		
-		// Create temporary pattern tree to test this specific pattern
-		tempTree := tree.NewPatternTree()
-		tempTree.AddPattern(expr)
-		
-		if tempTree.MatchSegments(segments) {
-			return metadata
+	for patternStr, patternTree := range v.parsedPatterns {
+		if patternTree.MatchSegments(segments) {
+			return v.patternToMeta[patternStr]
 		}
 	}
 

@@ -223,26 +223,61 @@ schemapath extract "$.app.features[\"feature-flags\"]" config.json
 
 ## ⚡ Performance
 
-Built for high-performance JSON processing:
+Built for high-performance JSON processing with multiple optimization strategies:
 
 - **Native AST Parsing**: Direct JSON-to-AST conversion eliminates double parsing
-- **Efficient Tree Structures**: Trie/radix trees for pattern matching
-- **Zero-Copy Operations**: Minimal string allocations during parsing
-- **Streaming Support**: Process large JSON documents efficiently
+- **Hybrid Strategy**: Uses gjson for simple patterns, our engine for complex ones
+- **Streaming Walk**: Single-pass JSON traversal with immediate value extraction
+- **Bloom Filters**: Fast rejection of non-matching paths (O(1) lookups)
+- **LRU Caching**: 80-90% cache hit rate for repeated patterns
+- **Memory Efficient**: 450x less memory than gjson on large JSON
 
-Benchmark results show 2-3x faster parsing compared to standard library approaches.
+**HybridValidator** (Phase 3) achieves:
+- **Small JSON (<1KB)**: 1,130 ns/op (2.77x slower than gjson, but handles all patterns)
+- **Large JSON (>1MB)**: 55.8 ms/op (**1.35x FASTER than gjson!** 🎉)
+- **Complex patterns**: Only we can handle `{*}`, `[#*pattern]`, `[~regex]`, `(a|b)`
+- **Multi-pattern**: 2.8 μs for 4 patterns on small JSON
+
+See detailed benchmarks:
+- [Phase 3 Results](docs/PHASE3_RESULTS.md) - Streaming + Bloom + Hybrid (beats gjson!)
+- [Phase 1 Results](docs/PHASE1_RESULTS.md) - Cached patterns (1.41x speedup)
+- [Phase 2 Results](docs/PHASE2_RESULTS.md) - Memory pooling experiments
+- [gjson Comparison](docs/GJSON_COMPARISON.md) - Head-to-head comparison
 
 ## 🏗️ Architecture
 
 ```
 json-schema-path/
 ├── cmd/schemapath/         # CLI application
+├── docs/                   # Documentation and benchmarks
 ├── json/                   # JSON processing with sonic/AST
 ├── parser/                 # Expression parser & lexer
 ├── spec/                   # Grammar specification & AST nodes
 ├── tree/                   # Pattern matching trie implementation
-└── schema_test.go        # Integration tests
+├── validators/             # Validator implementations
+└── schema_test.go          # Integration tests
 ```
+
+## 📚 Documentation
+
+### Core Concepts
+- [Grammar Specification](spec/SPECIFICATION.md) - Formal EBNF grammar and language semantics
+- [Why Repetition `{*}`?](docs/WHY_REPETITION.md) - Understanding recursive schemas and the need for `{*}`
+- [Pattern Examples](docs/PATTERN_EXAMPLES.md) - Simple vs complex patterns explained
+- [Path-Based Validation](docs/PATH_BASED_VALIDATION.md) - Validation architecture and use cases
+
+### Performance
+- **[Phase 3 Results](docs/PHASE3_RESULTS.md)** - Streaming + Bloom + Hybrid (**We beat gjson!**)
+- [Phase 1 Results](docs/PHASE1_RESULTS.md) - Cached patterns (1.41x speedup)
+- [Phase 2 Results](docs/PHASE2_RESULTS.md) - Memory pooling experiments
+- [Performance Benchmarks](docs/BENCHMARKS.md) - Comprehensive analysis
+- [Optimization Guide](docs/OPTIMIZATION_GUIDE.md) - Optimization strategies
+- [gjson Comparison](docs/GJSON_COMPARISON.md) - Head-to-head comparison
+
+### Development
+- [Specification Analysis](docs/SPECIFICATION_ANALYSIS.md) - Parser compliance
+- [Test Alignment](docs/TEST_ALIGNMENT.md) - Test coverage analysis
+- [Contributing Guide](CONTRIBUTING.md) - How to contribute
 
 ## 🧪 Testing
 
@@ -266,24 +301,11 @@ go test ./tree -v
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```bash
-git clone https://github.com/telnet2/json-schema-path.git
-cd json-schema-path
-go mod tidy
-go test ./...
-```
-
-### Adding New Features
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes with tests
-4. Run the test suite: `go test ./...`
-5. Submit a pull request
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+- Development setup and workflow
+- Code style and testing guidelines
+- Submitting issues and pull requests
+- Project structure overview
 
 ## 📄 License
 

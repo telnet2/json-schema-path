@@ -4,12 +4,28 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/ast"
 
 	"github.com/telnet2/json-schema-path/spec"
 )
+
+// Pool for reusing strings.Builder instances
+var stringBuilderPool = sync.Pool{
+	New: func() interface{} {
+		return &strings.Builder{}
+	},
+}
+
+// Pool for reusing segment slices
+var segmentSlicePool = sync.Pool{
+	New: func() interface{} {
+		s := make([]spec.PathSegment, 0, 16)
+		return &s
+	},
+}
 
 // ProcessingError represents an error during JSON processing
 type ProcessingError struct {
@@ -46,6 +62,82 @@ func (pe *PathExtractor) ExtractPaths(jsonData string) ([]string, error) {
 	paths := []string{}
 	pe.extractPathsFromAST(&root, "$", &paths)
 	return paths, nil
+}
+
+// PathValueHandler is a callback function that receives each path and its value during streaming walk
+type PathValueHandler func(path string, value interface{}) error
+
+// StreamingWalk walks through JSON data once, calling the handler for each path+value combination
+// This is more efficient than ExtractPaths + ExtractValue as it avoids re-parsing and double traversal
+func (pe *PathExtractor) StreamingWalk(jsonData string, handler PathValueHandler) error {
+	root, err := sonic.Get([]byte(jsonData))
+	if err != nil {
+		return ProcessingError{
+			Operation: "parsing JSON",
+			Message:   err.Error(),
+		}
+	}
+
+	return pe.streamingWalkAST(&root, "$", handler)
+}
+
+// streamingWalkAST recursively walks AST nodes, calling handler for each path+value
+func (pe *PathExtractor) streamingWalkAST(node *ast.Node, currentPath string, handler PathValueHandler) error {
+	// Call handler for this path+value
+	value, err := pe.astNodeToInterface(node)
+	if err != nil {
+		return err
+	}
+
+	if err := handler(currentPath, value); err != nil {
+		return err
+	}
+
+	switch node.Type() {
+	case ast.V_OBJECT:
+		if objMap, err := node.Map(); err == nil {
+			builder := stringBuilderPool.Get().(*strings.Builder)
+			defer stringBuilderPool.Put(builder)
+
+			baseLen := len(currentPath)
+			builder.Grow(baseLen + 50)
+
+			for key := range objMap {
+				builder.Reset()
+				builder.WriteString(currentPath)
+				builder.WriteByte('.')
+				builder.WriteString(key)
+
+				child := node.Get(key)
+				if err := pe.streamingWalkAST(child, builder.String(), handler); err != nil {
+					return err
+				}
+			}
+		}
+	case ast.V_ARRAY:
+		if arraySlice, err := node.Array(); err == nil {
+			builder := stringBuilderPool.Get().(*strings.Builder)
+			defer stringBuilderPool.Put(builder)
+
+			baseLen := len(currentPath)
+			builder.Grow(baseLen + 20)
+
+			for i := range arraySlice {
+				builder.Reset()
+				builder.WriteString(currentPath)
+				builder.WriteByte('[')
+				builder.WriteString(strconv.Itoa(i))
+				builder.WriteByte(']')
+
+				child := node.Index(i)
+				if err := pe.streamingWalkAST(child, builder.String(), handler); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // ExtractValue extracts a specific value from JSON data at the given path using AST
@@ -122,19 +214,42 @@ func (pe *PathExtractor) extractPathsFromAST(node *ast.Node, currentPath string,
 	case ast.V_OBJECT:
 		// Use the Map() method for simpler object traversal
 		if objMap, err := node.Map(); err == nil {
+			// Get a builder from the pool for constructing paths
+			builder := stringBuilderPool.Get().(*strings.Builder)
+			defer stringBuilderPool.Put(builder)
+
+			baseLen := len(currentPath)
+			builder.Grow(baseLen + 50) // Pre-allocate reasonable capacity
+
 			for key := range objMap {
+				builder.Reset()
+				builder.WriteString(currentPath)
+				builder.WriteByte('.')
+				builder.WriteString(key)
+
 				child := node.Get(key)
-				newPath := currentPath + "." + key
-				pe.extractPathsFromAST(child, newPath, paths)
+				pe.extractPathsFromAST(child, builder.String(), paths)
 			}
 		}
 	case ast.V_ARRAY:
 		// Use direct index access for array traversal
 		if arraySlice, err := node.Array(); err == nil {
+			// Get a builder from the pool for constructing paths
+			builder := stringBuilderPool.Get().(*strings.Builder)
+			defer stringBuilderPool.Put(builder)
+
+			baseLen := len(currentPath)
+			builder.Grow(baseLen + 20) // Pre-allocate for array notation
+
 			for i := range arraySlice {
+				builder.Reset()
+				builder.WriteString(currentPath)
+				builder.WriteByte('[')
+				builder.WriteString(strconv.Itoa(i))
+				builder.WriteByte(']')
+
 				child := node.Index(i)
-				newPath := currentPath + "[" + strconv.Itoa(i) + "]"
-				pe.extractPathsFromAST(child, newPath, paths)
+				pe.extractPathsFromAST(child, builder.String(), paths)
 			}
 		}
 	}
@@ -188,7 +303,9 @@ func (pe *PathExtractor) ConvertPathToSegments(path string) []spec.PathSegment {
 		return []spec.PathSegment{}
 	}
 
-	result := []spec.PathSegment{}
+	// Get a slice from the pool
+	resultPtr := segmentSlicePool.Get().(*[]spec.PathSegment)
+	result := (*resultPtr)[:0] // Reset length, keep capacity
 	i := 0
 
 	for i < len(path) {
@@ -238,7 +355,14 @@ func (pe *PathExtractor) ConvertPathToSegments(path string) []spec.PathSegment {
 		}
 	}
 
-	return result
+	// Make a copy since we're returning the slice and the pool will reuse it
+	resultCopy := make([]spec.PathSegment, len(result))
+	copy(resultCopy, result)
+
+	// Return slice to pool
+	segmentSlicePool.Put(resultPtr)
+
+	return resultCopy
 }
 
 func isDigits(value string) bool {

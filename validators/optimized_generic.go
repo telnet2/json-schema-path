@@ -12,10 +12,12 @@ import (
 
 // OptimizedGenericValidator provides optimized validation with pre-computation and complex patterns
 type OptimizedGenericValidator struct {
-	config      *GenericValidatorConfig
-	patternTree *tree.PatternTree
-	precomputed map[string]precomputedValidation
-	processor   *jsonpkg.PathExtractor
+	config         *GenericValidatorConfig
+	patternTree    *tree.PatternTree
+	precomputed    map[string]precomputedValidation
+	processor      *jsonpkg.PathExtractor
+	parsedPatterns map[string]*tree.PatternTree // Cached parsed patterns for fast metadata lookup
+	patternToMeta  map[string]json.RawMessage   // Pattern to metadata mapping
 }
 
 // NewOptimizedGenericValidator creates an optimized validator with pre-computation and pattern support
@@ -23,23 +25,33 @@ func NewOptimizedGenericValidator(config *GenericValidatorConfig) (*OptimizedGen
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
-	
-	patternTree := tree.NewPatternTree()
 
-	// Parse all configured patterns
-	for patternStr := range config.Paths {
+	patternTree := tree.NewPatternTree()
+	parsedPatterns := make(map[string]*tree.PatternTree, len(config.Paths))
+	patternToMeta := make(map[string]json.RawMessage, len(config.Paths))
+
+	// Parse all configured patterns once and cache them
+	for patternStr, metadata := range config.Paths {
 		expr, err := parser.ParseExpression(patternStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse pattern %s: %w", patternStr, err)
 		}
 		patternTree.AddPattern(expr)
+
+		// Cache individual pattern tree for fast metadata lookup
+		individualTree := tree.NewPatternTree()
+		individualTree.AddPattern(expr)
+		parsedPatterns[patternStr] = individualTree
+		patternToMeta[patternStr] = metadata
 	}
 
 	return &OptimizedGenericValidator{
-		config:      config,
-		patternTree: patternTree,
-		precomputed: make(map[string]precomputedValidation),
-		processor:   jsonpkg.NewPathExtractor(),
+		config:         config,
+		patternTree:    patternTree,
+		precomputed:    make(map[string]precomputedValidation),
+		processor:      jsonpkg.NewPathExtractor(),
+		parsedPatterns: parsedPatterns,
+		patternToMeta:  patternToMeta,
 	}, nil
 }
 
@@ -54,18 +66,20 @@ func (v *OptimizedGenericValidator) Validate(jsonData string) (*ValidationReport
 		}
 	}
 
-	results := []ValidationResult{}
+	// Pre-allocate results slice with known capacity
+	results := make([]ValidationResult, 0, len(v.precomputed))
+	timestamp := time.Now() // Single timestamp for all results
 
 	// Process pre-computed paths efficiently
 	for _, precomp := range v.precomputed {
 		value, err := v.processor.ExtractValue(jsonData, precomp.path)
 		if err == nil && value != nil {
 			validationResult := ValidationResult{
-				Path:      precomp.path,
-				Value:     value,
-				Metadata:  precomp.metadata,
-				Timestamp: time.Now(),
-				Valid:     true,
+				Path:        precomp.path,
+				Value:       value,
+				Metadata:    precomp.metadata,
+				Timestamp:   timestamp, // Reuse same timestamp
+				Valid:       true,
 				Description: fmt.Sprintf("Path %s matches configured pattern", precomp.path),
 			}
 			results = append(results, validationResult)
@@ -153,20 +167,11 @@ func (v *OptimizedGenericValidator) getMetadataForPath(path string) json.RawMess
 		return metadata
 	}
 
-	// Try to find matching pattern
+	// Use pre-parsed patterns for fast lookup - NO temp tree creation!
 	segments := v.processor.ConvertPathToSegments(path)
-	for patternStr, metadata := range v.config.Paths {
-		expr, err := parser.ParseExpression(patternStr)
-		if err != nil {
-			continue
-		}
-		
-		// Create temporary pattern tree to test this specific pattern
-		tempTree := tree.NewPatternTree()
-		tempTree.AddPattern(expr)
-		
-		if tempTree.MatchSegments(segments) {
-			return metadata
+	for patternStr, patternTree := range v.parsedPatterns {
+		if patternTree.MatchSegments(segments) {
+			return v.patternToMeta[patternStr]
 		}
 	}
 

@@ -5,9 +5,26 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/telnet2/json-schema-path/spec"
 )
+
+// Pool for reusing node set maps during matching
+var nodeSetPool = sync.Pool{
+	New: func() interface{} {
+		m := make(map[*node]struct{}, 16)
+		return &m
+	},
+}
+
+// Pool for reusing node slices during matching
+var nodeSlicePool = sync.Pool{
+	New: func() interface{} {
+		s := make([]*node, 0, 16)
+		return &s
+	},
+}
 
 // Transition types for pattern matching
 type transition interface {
@@ -243,8 +260,27 @@ func (t *PatternTree) applyRepetition(starts []*node, repetition *spec.Repetitio
 // MatchSegments checks whether the provided runtime path matches any pattern.
 func (t *PatternTree) MatchSegments(segments []spec.PathSegment) bool {
 	current := epsilonClosure([]*node{t.root})
+
+	// Get pooled resources
+	nextSetPtr := nodeSetPool.Get().(*map[*node]struct{})
+	nextSlicePtr := nodeSlicePool.Get().(*[]*node)
+	defer func() {
+		nodeSetPool.Put(nextSetPtr)
+		nodeSlicePool.Put(nextSlicePtr)
+	}()
+
+	nextSet := *nextSetPtr
+	// Clear the map
+	for k := range nextSet {
+		delete(nextSet, k)
+	}
+
 	for _, segment := range segments {
-		nextSet := make(map[*node]struct{})
+		// Clear nextSet for this iteration
+		for k := range nextSet {
+			delete(nextSet, k)
+		}
+
 		for _, state := range current {
 			switch segment.Type {
 			case spec.SegmentProperty:
@@ -270,18 +306,23 @@ func (t *PatternTree) MatchSegments(segments []spec.PathSegment) bool {
 				}
 			}
 		}
+
 		if len(nextSet) == 0 {
 			return false
 		}
-		next := make([]*node, 0, len(nextSet))
+
+		// Reuse slice
+		next := (*nextSlicePtr)[:0]
 		for n := range nextSet {
 			next = append(next, n)
 		}
+
 		current = epsilonClosure(next)
 		if len(current) == 0 {
 			return false
 		}
 	}
+
 	for _, state := range current {
 		if state.terminal {
 			return true
