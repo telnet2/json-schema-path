@@ -9,6 +9,8 @@ import (
         "github.com/bytedance/sonic/ast"
 )
 
+// Note: Package documentation is in ast_helpers.go
+
 // PathExtractor extracts JSON paths from JSON data using sonic
 type PathExtractor struct{}
 

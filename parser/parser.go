@@ -1,3 +1,26 @@
+// Package parser provides lexical analysis and parsing for schema-path expressions.
+//
+// The parser package implements a two-stage parsing process:
+//   1. Lexical analysis: Tokenizes input into ROOT, DOT, IDENTIFIER, brackets, etc.
+//   2. Syntactic analysis: Builds an Abstract Syntax Tree (AST) using recursive descent
+//
+// The parser supports the full schema-path grammar including:
+//   - Root anchor ($)
+//   - Property access (.name)
+//   - Bracket notation (["key"] and [key])
+//   - Group alternatives (|)
+//   - Zero-or-more repetition ({*})
+//
+// Example usage:
+//
+//	expr, err := parser.ParseExpression("$.node.(child|meta.child){*}.value")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Println(expr.String()) // Output: $.node(.child|.meta.child){*}.value
+//
+// The parser handles escape sequences in both quoted and unquoted bracket notation,
+// allowing special characters in property names.
 package parser
 
 import (

@@ -3,13 +3,13 @@ package main
 import (
         "encoding/json"
         "fmt"
-        "io/ioutil"
         "os"
         "strings"
 
         jsonpkg "jsonpath-sdk/json"
         "jsonpath-sdk/parser"
         "jsonpath-sdk/tree"
+
         "github.com/spf13/cobra"
 )
 
@@ -80,10 +80,15 @@ var parseCmd = &cobra.Command{
                         }
                         
                         var output []byte
+                        var marshalErr error
                         if prettyPrint {
-                                output, _ = json.MarshalIndent(result, "", "  ")
+                                output, marshalErr = json.MarshalIndent(result, "", "  ")
                         } else {
-                                output, _ = json.Marshal(result)
+                                output, marshalErr = json.Marshal(result)
+                        }
+                        if marshalErr != nil {
+                                fmt.Fprintf(os.Stderr, "Error marshaling JSON output: %v\n", marshalErr)
+                                os.Exit(1)
                         }
                         fmt.Println(string(output))
                 } else {
@@ -117,7 +122,7 @@ var testCmd = &cobra.Command{
                 // Handle file input
                 if strings.HasPrefix(jsonData, "@") {
                         filename := jsonData[1:]
-                        data, err := ioutil.ReadFile(filename)
+                        data, err := os.ReadFile(filename)
                         if err != nil {
                                 fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
                                 os.Exit(1)
@@ -188,10 +193,15 @@ var testCmd = &cobra.Command{
                         }
                         
                         var output []byte
+                        var marshalErr error
                         if prettyPrint {
-                                output, _ = json.MarshalIndent(result, "", "  ")
+                                output, marshalErr = json.MarshalIndent(result, "", "  ")
                         } else {
-                                output, _ = json.Marshal(result)
+                                output, marshalErr = json.Marshal(result)
+                        }
+                        if marshalErr != nil {
+                                fmt.Fprintf(os.Stderr, "Error marshaling JSON output: %v\n", marshalErr)
+                                os.Exit(1)
                         }
                         fmt.Println(string(output))
                 } else {
@@ -226,7 +236,7 @@ var validateCmd = &cobra.Command{
                 // Handle file input
                 if strings.HasPrefix(jsonData, "@") {
                         filename := jsonData[1:]
-                        data, err := ioutil.ReadFile(filename)
+                        data, err := os.ReadFile(filename)
                         if err != nil {
                                 fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
                                 os.Exit(1)
@@ -265,7 +275,7 @@ var extractCmd = &cobra.Command{
                 filename := args[1]
                 
                 // Read JSON file
-                data, err := ioutil.ReadFile(filename)
+                data, err := os.ReadFile(filename)
                 if err != nil {
                         fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filename, err)
                         os.Exit(1)
@@ -326,10 +336,15 @@ var extractCmd = &cobra.Command{
                         }
                         
                         var output []byte
+                        var marshalErr error
                         if prettyPrint {
-                                output, _ = json.MarshalIndent(result, "", "  ")
+                                output, marshalErr = json.MarshalIndent(result, "", "  ")
                         } else {
-                                output, _ = json.Marshal(result)
+                                output, marshalErr = json.Marshal(result)
+                        }
+                        if marshalErr != nil {
+                                fmt.Fprintf(os.Stderr, "Error marshaling JSON output: %v\n", marshalErr)
+                                os.Exit(1)
                         }
                         fmt.Println(string(output))
                 } else {

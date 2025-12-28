@@ -1,9 +1,17 @@
+// Package json provides JSON processing utilities for schema-path expressions.
+// It uses bytedance/sonic for high-performance JSON parsing and AST traversal,
+// providing 2-3x faster parsing compared to the standard library.
+//
+// Key features:
+//   - Path extraction from JSON documents
+//   - Value extraction at specific paths
+//   - JSON validation using sonic AST
+//   - Efficient AST traversal without reflection overhead
 package json
 
 import (
         "fmt"
 
-        "github.com/bytedance/sonic"
         "github.com/bytedance/sonic/ast"
 )
 
@@ -73,52 +81,64 @@ func (pe *PathExtractor) GetASTNodeAtPath(root *ast.Node, segments []string) (*a
         return current, nil
 }
 
-// parseArrayIndex safely parses a string to an array index
+// parseArrayIndex safely parses a string to an array index.
+// It handles bracket notation by stripping brackets if present,
+// then converts the remaining content to an integer.
 func parseArrayIndex(segment string) (int, error) {
+        // Handle empty segment
+        if len(segment) == 0 {
+                return -1, fmt.Errorf("empty segment")
+        }
+
         // Handle bracket notation by stripping brackets if present
         if len(segment) >= 2 && segment[0] == '[' && segment[len(segment)-1] == ']' {
                 segment = segment[1 : len(segment)-1]
         }
-        
-        // Convert to integer
-        if index := 0; true {
-                for i, char := range segment {
-                        if char < '0' || char > '9' {
-                                return -1, fmt.Errorf("non-numeric character at position %d", i)
-                        }
-                        index = index*10 + int(char-'0')
-                }
-                return index, nil
+
+        // Handle empty content after stripping brackets
+        if len(segment) == 0 {
+                return -1, fmt.Errorf("empty index")
         }
-        
-        return -1, fmt.Errorf("failed to parse array index")
+
+        // Convert to integer using manual parsing for efficiency
+        index := 0
+        for i, char := range segment {
+                if char < '0' || char > '9' {
+                        return -1, fmt.Errorf("non-numeric character '%c' at position %d", char, i)
+                }
+                index = index*10 + int(char-'0')
+        }
+        return index, nil
 }
 
-// TraverseASTWithCallback traverses the entire AST tree and calls the callback for each node
+// TraverseASTWithCallback traverses the entire AST tree and calls the callback for each node.
+// It uses efficient native AST navigation via sonic's Get() and Index() methods,
+// avoiding costly interface{} to string conversions.
 func (pe *PathExtractor) TraverseASTWithCallback(node *ast.Node, path string, callback func(string, *ast.Node)) {
         callback(path, node)
-        
+
         switch node.Type() {
         case ast.V_OBJECT:
-                // Use the Map() method for simpler object traversal
-                if objMap, err := node.Map(); err == nil {
-                        for key, value := range objMap {
-                                newPath := path + "." + key
-                                // Convert interface{} back to AST node for recursion
-                                if childNode, err := sonic.Get([]byte(fmt.Sprintf("%v", value))); err == nil {
-                                        pe.TraverseASTWithCallback(&childNode, newPath, callback)
-                                }
-                        }
+                // Use MapUseNode() for efficient object traversal with direct node access
+                objMap, err := node.MapUseNode()
+                if err != nil {
+                        return // Skip object if map cannot be retrieved
+                }
+                for key, childNode := range objMap {
+                        newPath := path + "." + key
+                        pe.TraverseASTWithCallback(&childNode, newPath, callback)
                 }
         case ast.V_ARRAY:
-                // Use the Array() method for simpler array traversal
-                if arraySlice, err := node.Array(); err == nil {
-                        for i, value := range arraySlice {
-                                newPath := path + "[" + fmt.Sprintf("%d", i) + "]"
-                                // Convert interface{} back to AST node for recursion
-                                if childNode, err := sonic.Get([]byte(fmt.Sprintf("%v", value))); err == nil {
-                                        pe.TraverseASTWithCallback(&childNode, newPath, callback)
-                                }
+                // Use Len() and Index() for efficient array traversal
+                length, err := node.Len()
+                if err != nil {
+                        return // Skip array if length cannot be determined
+                }
+                for i := 0; i < length; i++ {
+                        child := node.Index(i)
+                        if child.Exists() {
+                                newPath := fmt.Sprintf("%s[%d]", path, i)
+                                pe.TraverseASTWithCallback(child, newPath, callback)
                         }
                 }
         }

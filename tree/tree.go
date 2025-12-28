@@ -1,3 +1,23 @@
+// Package tree provides a trie-based pattern matching engine for schema-path expressions.
+//
+// The tree package builds an efficient trie (prefix tree) data structure from parsed
+// schema-path expressions, enabling fast pattern matching against JSON paths.
+//
+// Key features:
+//   - Trie-based pattern storage for O(n) path matching where n is path length
+//   - Support for group alternatives with | operator
+//   - Support for zero-or-more repetition with {*} operator
+//   - Efficient handling of recursive JSON schema structures
+//
+// The pattern matching algorithm uses backtracking to handle alternatives and
+// recursion, correctly implementing zero-or-more semantics for the {*} quantifier.
+//
+// Example usage:
+//
+//	expr, _ := parser.ParseExpression("$.(properties|definitions){*}.type")
+//	tree := tree.NewPatternTree()
+//	tree.AddPattern(expr)
+//	matches := tree.MatchPath([]string{"properties", "name", "type"})
 package tree
 
 import (
