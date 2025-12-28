@@ -499,38 +499,61 @@ func BenchmarkEndToEndPrebuilt(b *testing.B) {
 // COMPARISON: SCHEMA-PATH vs STANDARD JSON UNMARSHALING
 // =============================================================================
 
-// BenchmarkCompare_SchemaPath_vs_Unmarshal compares schema-path matching
-// against traditional JSON unmarshaling for value extraction
-func BenchmarkCompare_SchemaPath_vs_Unmarshal(b *testing.B) {
-	// Test case: Extract user.profile.name from medium JSON
-	expression := "$.user.profile.name"
-	jsonData := mediumJSON
+// BenchmarkCompare_Validation compares JSON validation approaches
+// This is a FAIR comparison: both approaches validate the same JSON
+func BenchmarkCompare_Validation(b *testing.B) {
+	testCases := []struct {
+		name string
+		json string
+	}{
+		{"small", smallJSON},
+		{"medium", mediumJSON},
+		{"large", largeJSON},
+	}
 
-	// Pre-build schema-path resources
-	expr, _ := parser.ParseExpression(expression)
-	patternTree := tree.NewPatternTree()
-	_ = patternTree.AddPattern(expr)
+	for _, tc := range testCases {
+		processor := jsonpkg.NewPathExtractor()
+		jsonBytes := []byte(tc.json)
+
+		b.Run(tc.name+"_schema_path_sonic", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = processor.ValidateJSON(tc.json)
+			}
+		})
+
+		b.Run(tc.name+"_std_unmarshal", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var data interface{}
+				_ = json.Unmarshal(jsonBytes, &data)
+			}
+		})
+	}
+}
+
+// BenchmarkCompare_SingleValueExtraction compares extracting a SINGLE known value
+// This is a FAIR comparison: both approaches extract the same value
+func BenchmarkCompare_SingleValueExtraction(b *testing.B) {
+	jsonData := mediumJSON
+	targetPath := "$.user.profile.name"
+	jsonBytes := []byte(jsonData)
+
 	processor := jsonpkg.NewPathExtractor()
 
-	b.Run("schema_path_extract", func(b *testing.B) {
+	b.Run("schema_path_direct", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			paths, _ := processor.ExtractPaths(jsonData)
-			for _, path := range paths {
-				segments := processor.ConvertPathToSegments(path)
-				if patternTree.MatchPath(segments) {
-					_, _ = processor.ExtractValue(jsonData, path)
-				}
-			}
+			// Direct extraction without pattern matching
+			_, _ = processor.ExtractValue(jsonData, targetPath)
 		}
 	})
 
-	b.Run("json_unmarshal_full", func(b *testing.B) {
+	b.Run("std_unmarshal_navigate", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			var data map[string]interface{}
-			_ = json.Unmarshal([]byte(jsonData), &data)
-			// Navigate to extract value
+			_ = json.Unmarshal(jsonBytes, &data)
 			if user, ok := data["user"].(map[string]interface{}); ok {
 				if profile, ok := user["profile"].(map[string]interface{}); ok {
 					_ = profile["name"]
@@ -538,21 +561,154 @@ func BenchmarkCompare_SchemaPath_vs_Unmarshal(b *testing.B) {
 			}
 		}
 	})
+}
 
-	b.Run("schema_path_validate_only", func(b *testing.B) {
+// BenchmarkCompare_PatternMatching compares pattern-based path discovery
+// This is WHERE SCHEMA-PATH EXCELS: finding all paths matching a pattern
+func BenchmarkCompare_PatternMatching(b *testing.B) {
+	jsonData := largeJSON
+	jsonBytes := []byte(jsonData)
+
+	// Pattern: find all "type" fields in schema definitions
+	pattern := "$.(properties|items){*}.type"
+	expr, _ := parser.ParseExpression(pattern)
+	patternTree := tree.NewPatternTree()
+	_ = patternTree.AddPattern(expr)
+	processor := jsonpkg.NewPathExtractor()
+
+	b.Run("schema_path_pattern", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = processor.ValidateJSON(jsonData)
+			paths, _ := processor.ExtractPaths(jsonData)
+			matches := 0
+			for _, path := range paths {
+				segments := processor.ConvertPathToSegments(path)
+				if patternTree.MatchPath(segments) {
+					matches++
+				}
+			}
+			_ = matches
 		}
 	})
 
-	b.Run("json_unmarshal_validate", func(b *testing.B) {
+	b.Run("std_unmarshal_manual_traverse", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			var data interface{}
-			_ = json.Unmarshal([]byte(jsonData), &data)
+			var data map[string]interface{}
+			_ = json.Unmarshal(jsonBytes, &data)
+			matches := 0
+			// Manual recursive traversal to find all "type" fields under properties/items
+			var traverse func(v interface{}, depth int)
+			traverse = func(v interface{}, depth int) {
+				switch val := v.(type) {
+				case map[string]interface{}:
+					if _, hasType := val["type"]; hasType {
+						matches++
+					}
+					if props, ok := val["properties"].(map[string]interface{}); ok {
+						traverse(props, depth+1)
+					}
+					if items, ok := val["items"].(map[string]interface{}); ok {
+						traverse(items, depth+1)
+					}
+					for _, child := range val {
+						if m, ok := child.(map[string]interface{}); ok {
+							traverse(m, depth+1)
+						}
+					}
+				}
+			}
+			traverse(data, 0)
+			_ = matches
 		}
 	})
+}
+
+// BenchmarkCompare_MultiDocumentMatching simulates real-world validation scenario:
+// Pre-compile pattern ONCE, then match against MANY documents
+func BenchmarkCompare_MultiDocumentMatching(b *testing.B) {
+	// Simulate 100 JSON documents to validate
+	documents := make([]string, 100)
+	for i := 0; i < 100; i++ {
+		documents[i] = mediumJSON // Use same structure for consistency
+	}
+
+	pattern := "$.user.profile.(name|email)"
+	expr, _ := parser.ParseExpression(pattern)
+	patternTree := tree.NewPatternTree()
+	_ = patternTree.AddPattern(expr)
+	processor := jsonpkg.NewPathExtractor()
+
+	b.Run("schema_path_precompiled", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			totalMatches := 0
+			for _, doc := range documents {
+				paths, _ := processor.ExtractPaths(doc)
+				for _, path := range paths {
+					segments := processor.ConvertPathToSegments(path)
+					if patternTree.MatchPath(segments) {
+						totalMatches++
+					}
+				}
+			}
+			_ = totalMatches
+		}
+	})
+
+	b.Run("std_unmarshal_each_doc", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			totalMatches := 0
+			for _, doc := range documents {
+				var data map[string]interface{}
+				_ = json.Unmarshal([]byte(doc), &data)
+				if user, ok := data["user"].(map[string]interface{}); ok {
+					if profile, ok := user["profile"].(map[string]interface{}); ok {
+						if _, ok := profile["name"]; ok {
+							totalMatches++
+						}
+						if _, ok := profile["email"]; ok {
+							totalMatches++
+						}
+					}
+				}
+			}
+			_ = totalMatches
+		}
+	})
+}
+
+// BenchmarkCompare_MemoryUsage compares memory allocation patterns
+func BenchmarkCompare_MemoryUsage(b *testing.B) {
+	testCases := []struct {
+		name string
+		json string
+	}{
+		{"small", smallJSON},
+		{"medium", mediumJSON},
+		{"large", largeJSON},
+	}
+
+	for _, tc := range testCases {
+		processor := jsonpkg.NewPathExtractor()
+		jsonBytes := []byte(tc.json)
+
+		b.Run(tc.name+"_schema_path_parse", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_, _ = processor.ExtractPaths(tc.json)
+			}
+		})
+
+		b.Run(tc.name+"_std_unmarshal", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var data interface{}
+				_ = json.Unmarshal(jsonBytes, &data)
+			}
+		})
+	}
 }
 
 // =============================================================================
